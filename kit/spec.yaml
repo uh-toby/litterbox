@@ -1,0 +1,209 @@
+schemaVersion: "2"
+kind: mixin
+name: toby-sbx
+displayName: Sentry + Linear + GitHub + Buildkite CLIs
+description: "Installs pi, the sentry, linear, gh and bk CLIs with their skills, opens their API hosts, and wires up credentials"
+
+caps:
+  network:
+    allow:
+      # --- Runtime: the APIs the CLIs call ---
+      # Sentry's API is sentry.io/api/0/. Region-scoped orgs are served from
+      # us.sentry.io / de.sentry.io, which the CLI discovers and caches itself.
+      - "sentry.io:443"
+      - "*.sentry.io:443"
+      # The linear CLI talks to the GraphQL API only. linear.app /
+      # auth.linear.app are deliberately omitted: those are the browser OAuth
+      # flow, which we replace with LINEAR_API_KEY below.
+      - "api.linear.app:443"
+      # GitHub. api.github.com is what `gh` calls; github.com and
+      # *.githubusercontent.com additionally cover git-over-HTTPS and the
+      # release-asset redirects every install command below depends on.
+      - "api.github.com:443"
+      - "github.com:443"
+      - "*.githubusercontent.com:443"
+      # Buildkite. The bk CLI hits the REST API (api.buildkite.com/v2) and the
+      # GraphQL API (graphql.buildkite.com/v1). buildkite.com itself is
+      # deliberately omitted: it is only the browser/OAuth surface, which we
+      # replace with BUILDKITE_API_TOKEN below.
+      - "api.buildkite.com:443"
+      - "graphql.buildkite.com:443"
+      # OpenRouter API and npm registry for pi installation and model requests.
+      - "openrouter.ai:443"
+      - "*.openrouter.ai:443"
+      - "registry.npmjs.org:443"
+
+# Inert until a secret is stored for each service name — see README.md. With no
+# secret, the sandbox still builds and starts; the CLI just gets a 401.
+#
+# There is deliberately NO `github` entry. sbx injects GH_TOKEN via a separate
+# built-in GitHub-token mechanism, so gh is already authenticated without one —
+# verified: `gh auth status` reports the real account in a claude sandbox with
+# nothing declared here. Adding one would also be actively harmful: `credentials`
+# merges as a union where any duplicate is a hard error, and the shell, copilot,
+# docker-agent and opencode agents each declare github themselves, so the kit
+# would fail to compose with them:
+#   ERROR: credential for service "github" defined in both "shell" and "toby-sbx"
+credentials:
+  - service: sentry
+    apiKey:
+      # The sentry CLI reads SENTRY_AUTH_TOKEN natively (SENTRY_TOKEN is an
+      # accepted alias).
+      name: SENTRY_AUTH_TOKEN
+      # proxyManaged: the container only ever sees the literal "proxy-managed".
+      # Verified that the CLI does no local format validation on the token — it
+      # reports "Authenticated via SENTRY_AUTH_TOKEN / active" and only fails at
+      # the API call, which is precisely what the proxy substitution fixes.
+      proxyManaged: true
+      inject:
+        - domain: sentry.io
+          header: Authorization
+          format: Bearer %s
+        - domain: "*.sentry.io"
+          header: Authorization
+          format: Bearer %s
+
+  - service: linear
+    apiKey:
+      # The linear CLI reads LINEAR_API_KEY natively. Using it also sidesteps
+      # the CLI's keyring path, which needs libsecret and would otherwise fail
+      # in a headless container.
+      name: LINEAR_API_KEY
+      proxyManaged: true
+      inject:
+        # Linear personal API keys (lin_api_*) go in Authorization raw, with no
+        # "Bearer " prefix. An OAuth access token would need "Bearer %s".
+        - domain: api.linear.app
+          header: Authorization
+          format: "%s"
+
+  - service: buildkite
+    apiKey:
+      # The bk CLI reads BUILDKITE_API_TOKEN natively, and it is the documented
+      # headless path — with no system keychain the CLI itself says "Keychain
+      # unavailable; token not stored. Use BUILDKITE_API_TOKEN to supply your
+      # token at runtime."
+      name: BUILDKITE_API_TOKEN
+      # proxyManaged: the container only ever sees the literal "proxy-managed".
+      # Verified that bk does no local format validation — it prints "Warning:
+      # using BUILDKITE_API_TOKEN environment variable for authentication" and
+      # then fails only at the API call with a 401, which is exactly what the
+      # proxy substitution fixes.
+      proxyManaged: true
+      inject:
+        # Both Buildkite APIs take `Authorization: Bearer <token>`; the CLI's own
+        # help text documents the REST call as
+        # `curl -H "Authorization: Bearer $(bk auth token)"`.
+        - domain: api.buildkite.com
+          header: Authorization
+          format: Bearer %s
+        - domain: graphql.buildkite.com
+          header: Authorization
+          format: Bearer %s
+
+
+environment:
+  variables:
+    # Make the env token authoritative. Without this the sentry CLI prefers a
+    # stored OAuth token, so a stray `sentry auth login` inside the sandbox
+    # would silently shadow the proxy-managed credential.
+    SENTRY_FORCE_ENV_TOKEN: "1"
+
+    # The egress proxy terminates TLS with its own CA. sbx already exports
+    # NODE_EXTRA_CA_CERTS / SSL_CERT_FILE / REQUESTS_CA_BUNDLE pointing at the
+    # bundle, which covers the (Node-based) sentry CLI. The linear CLI is a
+    # compiled Deno binary and reads none of those — without DENO_CERT it fails
+    # every request with "invalid peer certificate: UnknownIssuer".
+    # Verified in-sandbox: setting this turns the TLS failure into a clean
+    # authentication error, i.e. the request reaches api.linear.app.
+    DENO_CERT: /etc/ssl/certs/ca-certificates.crt
+
+    # bk resolves the org from the checked-out repo when it can, but falls back
+    # to "Warning: no organization set, only public pipelines will be visible"
+    # in a workspace with no Buildkite-linked remote. Pinning the only org we
+    # use makes bare `bk build list` work anywhere. Per-command overrides still
+    # win: `--pipeline usabilityhub/mobile-build`.
+    #
+    # Note there is deliberately no equivalent of SENTRY_FORCE_ENV_TOKEN here.
+    # bk does prefer a stored token over the env var, but storing one needs a
+    # system keychain ("OAuth login requires an available system keychain"),
+    # which the container has none of — so a stray `bk auth login` cannot
+    # shadow the proxy-managed credential.
+    BUILDKITE_ORGANIZATION_SLUG: usabilityhub
+
+commands:
+  install:
+    - user: "0"
+      description: Install pi
+      command: |
+        set -eu
+        npm install --global @earendil-works/pi-coding-agent@0.82.1
+
+    - user: "0"
+      description: Install the sentry CLI
+      command: |
+        set -eu
+        case "$(uname -m)" in
+          aarch64|arm64) arch=arm64 ;;
+          x86_64|amd64)  arch=x64 ;;
+          *) echo "toby-sbx: unsupported arch $(uname -m) for sentry CLI" >&2; exit 1 ;;
+        esac
+        curl -fsSL "https://github.com/getsentry/cli/releases/download/0.38.0/sentry-linux-${arch}.gz" \
+          | gzip -d > /usr/local/bin/sentry
+        chmod 0755 /usr/local/bin/sentry
+
+    - user: "0"
+      description: Install the linear CLI
+      command: |
+        set -eu
+        case "$(uname -m)" in
+          aarch64|arm64) arch=aarch64 ;;
+          x86_64|amd64)  arch=x86_64 ;;
+          *) echo "toby-sbx: unsupported arch $(uname -m) for linear CLI" >&2; exit 1 ;;
+        esac
+        # The release is .tar.xz; slim base images often ship tar without xz.
+        if ! command -v xz > /dev/null 2>&1; then
+          apt-get update -qq > /dev/null
+          DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
+            --no-install-recommends xz-utils > /dev/null
+        fi
+        tmp="$(mktemp -d)"
+        curl -fsSL "https://github.com/schpet/linear-cli/releases/download/v2.3.0/linear-${arch}-unknown-linux-gnu.tar.xz" \
+          | tar -xJ -C "$tmp"
+        install -m 0755 "$(find "$tmp" -type f -name linear | head -n 1)" /usr/local/bin/linear
+        rm -rf "$tmp"
+
+    - user: "0"
+      description: Install the gh CLI
+      command: |
+        set -eu
+        case "$(uname -m)" in
+          aarch64|arm64) arch=arm64 ;;
+          x86_64|amd64)  arch=amd64 ;;
+          *) echo "toby-sbx: unsupported arch $(uname -m) for gh CLI" >&2; exit 1 ;;
+        esac
+        tmp="$(mktemp -d)"
+        curl -fsSL "https://github.com/cli/cli/releases/download/v2.96.0/gh_2.96.0_linux_${arch}.tar.gz" \
+          | tar -xz -C "$tmp"
+        install -m 0755 "$(find "$tmp" -type f -path '*/bin/gh' | head -n 1)" /usr/local/bin/gh
+        rm -rf "$tmp"
+
+    - user: "0"
+      description: Install the bk CLI
+      command: |
+        set -eu
+        case "$(uname -m)" in
+          aarch64|arm64) arch=arm64 ;;
+          x86_64|amd64)  arch=amd64 ;;
+          *) echo "toby-sbx: unsupported arch $(uname -m) for bk CLI" >&2; exit 1 ;;
+        esac
+        tmp="$(mktemp -d)"
+        curl -fsSL "https://github.com/buildkite/cli/releases/download/v3.44.1/bk_3.44.1_linux_${arch}.tar.gz" \
+          | tar -xz -C "$tmp"
+        install -m 0755 "$(find "$tmp" -type f -name bk | head -n 1)" /usr/local/bin/bk
+        rm -rf "$tmp"
+
+# No agentContext, and no sandbox-specific skills: files/home/.claude/skills/ is
+# a straight mirror of the host's ~/.agents/skills/. This is deliberate — we are
+# testing whether an agent can work out the sandbox auth model on its own from
+# the CLIs' own error messages. Restore the hints here if it can't.
