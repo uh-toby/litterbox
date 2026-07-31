@@ -1,6 +1,6 @@
 schemaVersion: "2"
 kind: mixin
-name: toby-sbx
+name: toolkit
 displayName: Sentry + Linear + GitHub + Buildkite CLIs
 description: "Installs pi, the sentry, linear, gh and bk CLIs with their skills, opens their API hosts, and wires up credentials"
 
@@ -43,7 +43,7 @@ caps:
 # merges as a union where any duplicate is a hard error, and the shell, copilot,
 # docker-agent and opencode agents each declare github themselves, so the kit
 # would fail to compose with them:
-#   ERROR: credential for service "github" defined in both "shell" and "toby-sbx"
+#   ERROR: credential for service "github" defined in both "shell" and "toolkit"
 credentials:
   - service: sentry
     apiKey:
@@ -146,7 +146,7 @@ commands:
         case "$(uname -m)" in
           aarch64|arm64) arch=arm64 ;;
           x86_64|amd64)  arch=x64 ;;
-          *) echo "toby-sbx: unsupported arch $(uname -m) for sentry CLI" >&2; exit 1 ;;
+          *) echo "toolkit: unsupported arch $(uname -m) for sentry CLI" >&2; exit 1 ;;
         esac
         curl -fsSL "https://github.com/getsentry/cli/releases/download/0.38.0/sentry-linux-${arch}.gz" \
           | gzip -d > /usr/local/bin/sentry
@@ -159,7 +159,7 @@ commands:
         case "$(uname -m)" in
           aarch64|arm64) arch=aarch64 ;;
           x86_64|amd64)  arch=x86_64 ;;
-          *) echo "toby-sbx: unsupported arch $(uname -m) for linear CLI" >&2; exit 1 ;;
+          *) echo "toolkit: unsupported arch $(uname -m) for linear CLI" >&2; exit 1 ;;
         esac
         # The release is .tar.xz; slim base images often ship tar without xz.
         if ! command -v xz > /dev/null 2>&1; then
@@ -180,7 +180,7 @@ commands:
         case "$(uname -m)" in
           aarch64|arm64) arch=arm64 ;;
           x86_64|amd64)  arch=amd64 ;;
-          *) echo "toby-sbx: unsupported arch $(uname -m) for gh CLI" >&2; exit 1 ;;
+          *) echo "toolkit: unsupported arch $(uname -m) for gh CLI" >&2; exit 1 ;;
         esac
         tmp="$(mktemp -d)"
         curl -fsSL "https://github.com/cli/cli/releases/download/v2.96.0/gh_2.96.0_linux_${arch}.tar.gz" \
@@ -195,7 +195,7 @@ commands:
         case "$(uname -m)" in
           aarch64|arm64) arch=arm64 ;;
           x86_64|amd64)  arch=amd64 ;;
-          *) echo "toby-sbx: unsupported arch $(uname -m) for bk CLI" >&2; exit 1 ;;
+          *) echo "toolkit: unsupported arch $(uname -m) for bk CLI" >&2; exit 1 ;;
         esac
         tmp="$(mktemp -d)"
         curl -fsSL "https://github.com/buildkite/cli/releases/download/v3.44.1/bk_3.44.1_linux_${arch}.tar.gz" \

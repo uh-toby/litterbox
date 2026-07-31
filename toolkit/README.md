@@ -1,4 +1,4 @@
-# toby-sbx
+# toolkit
 
 An `sbx` kit (mixin) that installs **pi**, makes the **sentry**, **linear**, **gh** and **bk** CLIs work inside a sandbox, and includes a mirror of your host skills.
 
@@ -60,7 +60,7 @@ Create a binding (re-run interactively, or edit ~/.config/sbx/credentials.yaml) 
 Create the sandbox **interactively** and approve the prompt — it offers to apply to all sandboxes, current and future, so it's a one-time step:
 
 ```sh
-sbx run claude --kit ~/.config/sbx/kits/toby-sbx .
+sbx run claude --kit ~/projects/litterbox/toolkit .
 ```
 
 This is a deliberate security gate, so approve it yourself rather than hand-forging `~/.config/sbx/credentials.yaml`. `.sbxenv.yaml` also has a `bindings:` key if you want it declared.
@@ -68,7 +68,7 @@ This is a deliberate security gate, so approve it yourself rather than hand-forg
 ## Use it
 
 ```sh
-sbx run shell --kit ~/.config/sbx/kits/toby-sbx .
+sbx run shell --kit ~/projects/litterbox/toolkit .
 ```
 
 Inside the sandbox, run `pi`. It uses OpenRouter and `openai/gpt-5.6-luna` by default.
@@ -76,7 +76,7 @@ Inside the sandbox, run `pi`. It uses OpenRouter and `openai/gpt-5.6-luna` by de
 For an agent sandbox, the kit can also be composed with an existing agent:
 
 ```sh
-sbx run claude --kit ~/.config/sbx/kits/toby-sbx .
+sbx run claude --kit ~/projects/litterbox/toolkit .
 ```
 
 To avoid passing `--kit` every time, declare it in a `.sbxenv.yaml` (its schema includes `agent`, `kits`, `workspace`, `secrets`, `bindings`, `environment`, `ports`) and use `sbx env run`, which auto-discovers the file from the current directory. There is no global default-kit setting — I checked `sbx settings list`.
@@ -137,7 +137,7 @@ The supporting host-level checks, with `bk` run against an empty `HOME`/`XDG_CON
 - **`linear.app` and `auth.linear.app` are deliberately blocked.** Only `api.linear.app` is open, so browser-opening commands won't work. The skill tells the agent to print the URL instead.
 - **Use `--kit` at create time, not `sbx kit add`.** sbx has a known gap where `kit add` on a mixin skips the `agentContext` file (it gates on the artifact's own `aiFilename`, empty for mixins). The skills under `files/` are copied on both paths, so they survive either way — but the `agentContext` backstop only lands at create time.
 - **`DENO_CERT` is load-bearing for the linear CLI.** sbx's egress proxy terminates TLS with its own CA and exports `NODE_EXTRA_CA_CERTS` / `SSL_CERT_FILE` / `REQUESTS_CA_BUNDLE`. The linear CLI is a compiled Deno binary and reads none of them, so it fails every request with `invalid peer certificate: UnknownIssuer` until `DENO_CERT` points at the bundle. The path assumes a Debian-family base image.
-- **GitHub needs no kit credential, and must not have one.** sbx injects `GH_TOKEN` through a separate built-in GitHub-token mechanism — gh is authenticated with nothing declared in `credentials`. Declaring one anyway is a hard failure on four agents, because `credentials` merges as a union where duplicates error and `shell`, `copilot`, `docker-agent` and `opencode` each declare github themselves: `credential for service "github" defined in both "shell" and "toby-sbx"`. Verified both directions.
+- **GitHub needs no kit credential, and must not have one.** sbx injects `GH_TOKEN` through a separate built-in GitHub-token mechanism — gh is authenticated with nothing declared in `credentials`. Declaring one anyway is a hard failure on four agents, because `credentials` merges as a union where duplicates error and `shell`, `copilot`, `docker-agent` and `opencode` each declare github themselves: `credential for service "github" defined in both "shell" and "toolkit"`. Verified both directions.
 - **Never let a `.DS_Store` into `files/`.** sbx writes kit files through a shell command, so binary content kills container startup: `write file /home/agent/.DS_Store failed (exit 2): sh: 1: Syntax error: Unterminated quoted string`. `sbx kit validate` does **not** catch this — it passes, and then `create` fails with a 500. Any sync must strip `.DS_Store` and `._*`.
 - **`BUILDKITE_ORGANIZATION_SLUG` is a convenience, not a requirement.** It only sets the default; `--pipeline usabilityhub/mobile-build` and the `{org}/{pipeline}/builds/{n}` form still override it per command. Drop it if you ever sandbox a repo in a different Buildkite org.
 - **`bk` warns on every invocation.** `Warning: using BUILDKITE_API_TOKEN environment variable for authentication` is expected and harmless — same class as the linear CLI's env warning.
@@ -156,7 +156,7 @@ The payoff is that nothing can drift. An override would have frozen each skill a
 To refresh after editing a host skill:
 
 ```sh
-cd ~/.config/sbx/kits/toby-sbx/files/home/.claude/skills
+cd ~/projects/litterboxtoolkit/files/home/.claude/skills
 rm -rf ./* && cp -RL ~/.agents/skills/* .
 find . \( -name .DS_Store -o -name "._*" \) -delete
 ```
