@@ -2,7 +2,7 @@ schemaVersion: "2"
 kind: mixin
 name: toolkit
 displayName: Sentry + Linear + GitHub + Buildkite CLIs
-description: "Installs pi, the sentry, linear, gh and bk CLIs with their skills, opens their API hosts, and wires up credentials"
+description: "Configures API access for the prebuilt pi, sentry, linear, gh and bk tooling, opens their API hosts, and wires up credentials"
 
 caps:
   network:
@@ -28,10 +28,9 @@ caps:
       # replace with BUILDKITE_API_TOKEN below.
       - "api.buildkite.com:443"
       - "graphql.buildkite.com:443"
-      # OpenRouter API and npm registry for pi installation and model requests.
+      # OpenRouter API for pi model requests.
       - "openrouter.ai:443"
       - "*.openrouter.ai:443"
-      - "registry.npmjs.org:443"
 
 # Inert until a secret is stored for each service name — see README.md. With no
 # secret, the sandbox still builds and starts; the CLI just gets a 401.
@@ -131,77 +130,9 @@ environment:
     # shadow the proxy-managed credential.
     BUILDKITE_ORGANIZATION_SLUG: usabilityhub
 
-commands:
-  install:
-    - user: "0"
-      description: Install pi
-      command: |
-        set -eu
-        npm install --global @earendil-works/pi-coding-agent@0.82.1
-
-    - user: "0"
-      description: Install the sentry CLI
-      command: |
-        set -eu
-        case "$(uname -m)" in
-          aarch64|arm64) arch=arm64 ;;
-          x86_64|amd64)  arch=x64 ;;
-          *) echo "toolkit: unsupported arch $(uname -m) for sentry CLI" >&2; exit 1 ;;
-        esac
-        curl -fsSL "https://github.com/getsentry/cli/releases/download/0.38.0/sentry-linux-${arch}.gz" \
-          | gzip -d > /usr/local/bin/sentry
-        chmod 0755 /usr/local/bin/sentry
-
-    - user: "0"
-      description: Install the linear CLI
-      command: |
-        set -eu
-        case "$(uname -m)" in
-          aarch64|arm64) arch=aarch64 ;;
-          x86_64|amd64)  arch=x86_64 ;;
-          *) echo "toolkit: unsupported arch $(uname -m) for linear CLI" >&2; exit 1 ;;
-        esac
-        # The release is .tar.xz; slim base images often ship tar without xz.
-        if ! command -v xz > /dev/null 2>&1; then
-          apt-get update -qq > /dev/null
-          DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
-            --no-install-recommends xz-utils > /dev/null
-        fi
-        tmp="$(mktemp -d)"
-        curl -fsSL "https://github.com/schpet/linear-cli/releases/download/v2.3.0/linear-${arch}-unknown-linux-gnu.tar.xz" \
-          | tar -xJ -C "$tmp"
-        install -m 0755 "$(find "$tmp" -type f -name linear | head -n 1)" /usr/local/bin/linear
-        rm -rf "$tmp"
-
-    - user: "0"
-      description: Install the gh CLI
-      command: |
-        set -eu
-        case "$(uname -m)" in
-          aarch64|arm64) arch=arm64 ;;
-          x86_64|amd64)  arch=amd64 ;;
-          *) echo "toolkit: unsupported arch $(uname -m) for gh CLI" >&2; exit 1 ;;
-        esac
-        tmp="$(mktemp -d)"
-        curl -fsSL "https://github.com/cli/cli/releases/download/v2.96.0/gh_2.96.0_linux_${arch}.tar.gz" \
-          | tar -xz -C "$tmp"
-        install -m 0755 "$(find "$tmp" -type f -path '*/bin/gh' | head -n 1)" /usr/local/bin/gh
-        rm -rf "$tmp"
-
-    - user: "0"
-      description: Install the bk CLI
-      command: |
-        set -eu
-        case "$(uname -m)" in
-          aarch64|arm64) arch=arm64 ;;
-          x86_64|amd64)  arch=amd64 ;;
-          *) echo "toolkit: unsupported arch $(uname -m) for bk CLI" >&2; exit 1 ;;
-        esac
-        tmp="$(mktemp -d)"
-        curl -fsSL "https://github.com/buildkite/cli/releases/download/v3.44.1/bk_3.44.1_linux_${arch}.tar.gz" \
-          | tar -xz -C "$tmp"
-        install -m 0755 "$(find "$tmp" -type f -name bk | head -n 1)" /usr/local/bin/bk
-        rm -rf "$tmp"
+# The CLIs are installed in a prebuilt image. Keep this kit as a mixin so the
+# same runtime policy can be used with shell, Claude, or another matching agent
+# image. Build instructions are in ../docker/README.md.
 
 # No agentContext, and no sandbox-specific skills: files/home/.claude/skills/ is
 # a straight mirror of the host's ~/.agents/skills/. This is deliberate — we are

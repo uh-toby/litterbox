@@ -1,8 +1,8 @@
 # toolkit
 
-An `sbx` kit (mixin) that installs **pi**, makes the **sentry**, **linear**, **gh** and **bk** CLIs work inside a sandbox, and includes a mirror of your host skills.
+An `sbx` kit (mixin) that configures the prebuilt **pi**, **sentry**, **linear**, **gh** and **bk** tooling inside a sandbox, and includes a mirror of your host skills.
 
-Everything lives in the kit — CLIs, egress, pi defaults, and skills. The only host-side step is storing the Sentry, Linear, Buildkite, and OpenRouter secrets; GitHub needs nothing, see below. OpenRouter is supplied by sbx's built-in shell-agent credential rather than declared by this kit, avoiding a credential collision when the kit is composed with `shell`.
+The static CLI installations live in an agent-specific Docker image; this kit contains the flexible runtime policy, egress, pi defaults, and skills. The only host-side step is storing the Sentry, Linear, Buildkite, and OpenRouter secrets; GitHub needs nothing, see below. OpenRouter is supplied by sbx's built-in shell-agent credential rather than declared by this kit, avoiding a credential collision when the kit is composed with `shell`.
 
 Authored against kit-spec **v2**, validated on sbx `v0.35.0`.
 
@@ -10,7 +10,7 @@ Authored against kit-spec **v2**, validated on sbx `v0.35.0`.
 
 | Concern | How |
 | --- | --- |
-| CLIs | `commands.install` installs pi 0.82.1 via npm and downloads `sentry` 0.38.0, `linear` 2.3.0, `gh` 2.96.0 and `bk` 3.44.1 to `/usr/local/bin` |
+| CLIs | The matching prebuilt image installs pi 0.82.1 via npm and provides `sentry` 0.38.0, `linear` 2.3.0, `gh` 2.96.0 and `bk` 3.44.1 in `/usr/local/bin` |
 | Pi | `pi` defaults to the OpenRouter model `openai/gpt-5.6-luna` |
 | Pi auth | The shell agent's built-in OpenRouter credential injects the host-managed key for requests to `openrouter.ai` |
 | Skills | `files/home/.claude/skills/` is a straight mirror of `~/.agents/skills/` → `/home/agent/.claude/skills/` |
@@ -60,7 +60,7 @@ Create a binding (re-run interactively, or edit ~/.config/sbx/credentials.yaml) 
 Create the sandbox **interactively** and approve the prompt — it offers to apply to all sandboxes, current and future, so it's a one-time step:
 
 ```sh
-sbx run claude --kit ~/projects/litterbox/toolkit .
+sbx run claude --template docker.io/toby/litterbox:claude-v1 --kit ~/projects/litterbox/toolkit .
 ```
 
 This is a deliberate security gate, so approve it yourself rather than hand-forging `~/.config/sbx/credentials.yaml`. `.sbxenv.yaml` also has a `bindings:` key if you want it declared.
@@ -68,34 +68,34 @@ This is a deliberate security gate, so approve it yourself rather than hand-forg
 ## Use it
 
 ```sh
-sbx run shell --kit ~/projects/litterbox/toolkit .
+sbx run shell --template docker.io/toby/litterbox:shell-v1 --kit ~/projects/litterbox/toolkit .
 ```
 
 Inside the sandbox, run `pi`. It uses OpenRouter and `openai/gpt-5.6-luna` by default.
 
-For an agent sandbox, the kit can also be composed with an existing agent:
+For an agent sandbox, use the image built from that agent's matching base:
 
 ```sh
-sbx run claude --kit ~/projects/litterbox/toolkit .
+sbx run claude --template docker.io/toby/litterbox:claude-v1 --kit ~/projects/litterbox/toolkit .
 ```
 
 To avoid passing `--kit` every time, declare it in a `.sbxenv.yaml` (its schema includes `agent`, `kits`, `workspace`, `secrets`, `bindings`, `environment`, `ports`) and use `sbx env run`, which auto-discovers the file from the current directory. There is no global default-kit setting — I checked `sbx settings list`.
 
 ## Pi notes
 
-Pi is installed globally from npm at version 0.82.1. Its configuration is seeded at
+Pi is installed globally in the matching agent image from npm at version 0.82.1. Its configuration is seeded at
 `/home/agent/.pi/agent/settings.json`, with OpenRouter and
 `openai/gpt-5.6-luna` as the defaults. The OpenRouter key is supplied by sbx's built-in shell-agent credential, so it
 is never written into the kit or sandbox filesystem.
 
 The kit has been validated with `sbx kit validate`. A new sandbox must be
-created to run the install command and receive the seeded pi configuration.
+created with the matching image to receive the seeded pi configuration.
 
 ## What was verified
 
 Confirmed in real sandboxes, on both the `shell` and `claude` agents:
 
-- All four CLIs install and run: `sentry` `0.38.0`, `linear` `2.3.0`, `gh` `2.96.0`, `bk` `3.44.1` (at `/usr/local/bin/bk`). The `xz-utils` fallback works — also checked standalone in `debian:bookworm-slim` with only `curl` present.
+- The image provides all four CLIs: `sentry` `0.38.0`, `linear` `2.3.0`, `gh` `2.96.0`, `bk` `3.44.1` (at `/usr/local/bin/bk`). The image build retains the `xz-utils` fallback for slim base images.
 - Skills land at `/home/agent/.claude/skills/{sentry,linear,github,buildkite}/`.
 - Env is as intended: `SENTRY_AUTH_TOKEN=proxy-managed`, `LINEAR_API_KEY=proxy-managed`, `BUILDKITE_API_TOKEN=proxy-managed`, `SENTRY_FORCE_ENV_TOKEN=1`, `BUILDKITE_ORGANIZATION_SLUG=usabilityhub`.
 - `DENO_CERT` resolves the linear CLI's TLS failure — with it, requests reach `api.linear.app` and fail only on authentication.
@@ -142,7 +142,7 @@ The supporting host-level checks, with `bk` run against an empty `HOME`/`XDG_CON
 - **`BUILDKITE_ORGANIZATION_SLUG` is a convenience, not a requirement.** It only sets the default; `--pipeline usabilityhub/mobile-build` and the `{org}/{pipeline}/builds/{n}` form still override it per command. Drop it if you ever sandbox a repo in a different Buildkite org.
 - **`bk` warns on every invocation.** `Warning: using BUILDKITE_API_TOKEN environment variable for authentication` is expected and harmless — same class as the linear CLI's env warning.
 - **`buildkite.com` is deliberately blocked.** Only the two API hosts are open, so `bk` subcommands that open a browser won't work; the printed build URLs still do on the host.
-- **Pinned versions.** `0.38.0`, `v2.3.0`, `v2.96.0` and `v3.44.1` are hardcoded. Bump them here when you bump the host formulas; nothing auto-updates.
+- **Pinned versions.** The image build pins pi `0.82.1`, sentry `0.38.0`, linear `v2.3.0`, gh `v2.96.0` and bk `v3.44.1` in `docker/install-tools.sh`. Bump them there and rebuild/publish each agent image; nothing auto-updates.
 - **`~/.claude` persistence.** Claude's base kit uses persistent named volumes. If a stale skills copy ever sticks around across recreates, that's why.
 
 ## Skills
