@@ -2,9 +2,10 @@ schemaVersion: "2"
 kind: mixin
 name: toolkit
 displayName: Sentry + Linear + GitHub + Buildkite CLIs
+version: "1.0.0"
 description: "Configures API access for the prebuilt pi, sentry, linear, gh and bk tooling, opens their API hosts, and wires up credentials"
 
-caps:
+permissions:
   network:
     allow:
       # --- Runtime: the APIs the CLIs call ---
