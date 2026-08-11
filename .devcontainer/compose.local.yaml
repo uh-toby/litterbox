@@ -1,0 +1,24 @@
+# Personal devcontainer compose overrides.
+# See .devcontainer/compose.yaml for the base service config to extend.
+services:
+  rails-app:
+    environment:
+      SSH_AUTH_SOCK: /run/host-services/ssh-auth.sock
+      LINEAR_API_KEY: ${LINEAR_API_KEY:-}
+    volumes:
+      - ~/Documents/agent-notes:/home/lyssna/Documents/agent-notes
+      - ~/.agents:/home/lyssna/.agents
+      - ~/.agents/skills:/home/lyssna/.claude/skills
+      - pi-agent:/home/lyssna/.pi/agent
+      # Docker Desktop's host SSH-agent forwarding socket.
+      - type: bind
+        source: /run/host-services/ssh-auth.sock
+        target: /run/host-services/ssh-auth.sock
+      # Use the host Pi credentials without copying them into the worktree.
+      - type: bind
+        source: ${HOME}/.pi/agent/auth.json
+        target: /home/lyssna/.pi/agent/auth.json
+        read_only: true
+
+volumes:
+  pi-agent:
