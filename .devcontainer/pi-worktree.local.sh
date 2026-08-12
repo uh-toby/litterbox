@@ -6,18 +6,27 @@ usage() {
 Usage:
   $0 <branch-name>
   $0 --continue <branch-name>
+  $0 --teardown <branch-name>
 
-Without --continue, creates a worktree at .claude/worktrees/<branch-name> and
+Without an option, creates a worktree at .claude/worktrees/<branch-name> and
 checks out a new branch with that name. --continue reconnects to an existing
-worktree's devcontainer, starting it when necessary.
+worktree's devcontainer, starting it when necessary. --teardown deletes that
+worktree's containers and removes the local worktree without deleting either
+its local or remote branch.
 EOF
   exit 2
 }
 
 continue_existing=false
+teardown=false
 case "${1:-}" in
   --continue)
     continue_existing=true
+    branch="${2:-}"
+    [[ $# -eq 2 && -n "$branch" ]] || usage
+    ;;
+  --teardown)
+    teardown=true
     branch="${2:-}"
     [[ $# -eq 2 && -n "$branch" ]] || usage
     ;;
@@ -31,6 +40,93 @@ repo_root="$(git rev-parse --show-toplevel)"
 worktree_slug="${branch//\//-}"
 worktree="${repo_root}/.claude/worktrees/${worktree_slug}"
 git check-ref-format --branch "$branch" >/dev/null
+
+if [[ "$teardown" == true ]]; then
+  [[ -d "$worktree" ]] || {
+    echo "Error: worktree does not exist: $worktree" >&2
+    exit 1
+  }
+
+  command -v docker >/dev/null || {
+    echo "Error: Docker CLI is not installed." >&2
+    exit 1
+  }
+
+  # Compose labels all services with its working directory and project name.
+  # The devcontainer label is only on the primary service, so use it to find
+  # every container and volume belonging to the worktree's Compose project.
+  devcontainer_containers=()
+  while IFS= read -r container; do
+    [[ -n "$container" ]] && devcontainer_containers+=("$container")
+  done < <(docker ps --all --quiet \
+    --filter "label=devcontainer.local_folder=$worktree")
+
+  compose_working_dirs=()
+  compose_projects=()
+  if [[ -n "${devcontainer_containers[*]:-}" ]]; then
+    for container in "${devcontainer_containers[@]}"; do
+      compose_working_dir="$(docker inspect \
+        --format '{{ index .Config.Labels "com.docker.compose.project.working_dir" }}' \
+        "$container")"
+      compose_project="$(docker inspect \
+        --format '{{ index .Config.Labels "com.docker.compose.project" }}' \
+        "$container")"
+
+      if [[ -z "$compose_working_dir" || "$compose_working_dir" == "<no value>" ]]; then
+        echo "Removing devcontainer: $container"
+        docker rm --force "$container"
+        continue
+      fi
+
+      if [[ -z "$compose_project" || "$compose_project" == "<no value>" ]]; then
+        echo "Error: could not determine the Compose project for devcontainer: $container" >&2
+        exit 1
+      fi
+
+      if [[ -n "${compose_working_dirs[*]:-}" ]]; then
+        for known_working_dir in "${compose_working_dirs[@]}"; do
+          [[ "$known_working_dir" == "$compose_working_dir" ]] && continue 2
+        done
+      fi
+      compose_working_dirs+=("$compose_working_dir")
+      compose_projects+=("$compose_project")
+    done
+  fi
+
+  if [[ -n "${compose_working_dirs[*]:-}" ]]; then
+    for compose_working_dir in "${compose_working_dirs[@]}"; do
+      project_containers=()
+      while IFS= read -r container; do
+        [[ -n "$container" ]] && project_containers+=("$container")
+      done < <(docker ps --all --quiet \
+        --filter "label=com.docker.compose.project.working_dir=$compose_working_dir")
+
+      if [[ -n "${project_containers[*]:-}" ]]; then
+        echo "Removing devcontainer project in: $compose_working_dir"
+        docker rm --force "${project_containers[@]}"
+      fi
+    done
+  fi
+
+  if [[ -n "${compose_projects[*]:-}" ]]; then
+    for compose_project in "${compose_projects[@]}"; do
+      project_volumes=()
+      while IFS= read -r volume; do
+        [[ -n "$volume" ]] && project_volumes+=("$volume")
+      done < <(docker volume ls --quiet \
+        --filter "label=com.docker.compose.project=$compose_project")
+
+      if [[ -n "${project_volumes[*]:-}" ]]; then
+        echo "Removing devcontainer volumes for project: $compose_project"
+        docker volume rm "${project_volumes[@]}"
+      fi
+    done
+  fi
+
+  echo "Removing worktree: $worktree"
+  git worktree remove "$worktree"
+  exit 0
+fi
 
 command -v devcontainer >/dev/null || {
   echo "Error: devcontainer CLI is not installed." >&2
