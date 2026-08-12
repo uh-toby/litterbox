@@ -175,6 +175,19 @@ GH_TOKEN="$(security find-generic-password \
 }
 export GH_TOKEN
 
+DD_API_KEY="$(security find-generic-password \
+  -a "$USER" \
+  -s lyssna-datadog-api-key \
+  -w)" || {
+  echo "Error: could not read DD_API_KEY from the lyssna-datadog-api-key Keychain item." >&2
+  exit 1
+}
+[[ -n "$DD_API_KEY" ]] || {
+  echo "Error: DD_API_KEY from Keychain is empty." >&2
+  exit 1
+}
+export DD_API_KEY
+
 if [[ "$continue_existing" == true ]]; then
   [[ -d "$worktree" ]] || {
     echo "Error: worktree does not exist: $worktree" >&2

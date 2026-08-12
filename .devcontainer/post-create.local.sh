@@ -14,6 +14,35 @@ if ! command -v linear >/dev/null 2>&1; then
     | LINEAR_INSTALL_DIR="$HOME/.local" sh
 fi
 
+# Install DataDog's Pup CLI from its latest GitHub release. Homebrew is not
+# available in the devcontainer, and ~/.local/bin is already on PATH.
+# https://github.com/DataDog/pup
+mkdir -p "$HOME/.local/bin"
+if ! command -v pup >/dev/null 2>&1; then
+  case "$(uname -m)" in
+    aarch64 | arm64) pup_arch="arm64" ;;
+    x86_64) pup_arch="x86_64" ;;
+    *)
+      echo "Error: unsupported architecture for Pup: $(uname -m)" >&2
+      exit 1
+      ;;
+  esac
+
+  echo "Installing DataDog Pup..."
+  pup_tag="$(curl --proto '=https' --tlsv1.2 -LsS -o /dev/null -w '%{url_effective}' \
+    https://github.com/DataDog/pup/releases/latest)"
+  pup_tag="${pup_tag##*/}"
+  pup_version="${pup_tag#v}"
+  pup_archive="pup_${pup_version}_Linux_${pup_arch}.tar.gz"
+  pup_url="https://github.com/DataDog/pup/releases/download/${pup_tag}/${pup_archive}"
+  pup_tmpdir="$(mktemp -d)"
+
+  curl --proto '=https' --tlsv1.2 -LsSf "$pup_url" -o "$pup_tmpdir/$pup_archive"
+  tar -xzf "$pup_tmpdir/$pup_archive" -C "$pup_tmpdir" pup
+  install -m 755 "$pup_tmpdir/pup" "$HOME/.local/bin/pup"
+  rm -rf "$pup_tmpdir"
+fi
+
 # Set up a headless system keyring (gnome-keyring's Secret Service over
 # D-Bus) so CLIs like `linear auth login` can store credentials encrypted
 # at rest instead of falling back to a plaintext credentials file.
