@@ -162,6 +162,19 @@ LINEAR_API_KEY="$(security find-generic-password \
 }
 export LINEAR_API_KEY
 
+GH_TOKEN="$(security find-generic-password \
+  -a "$USER" \
+  -s lyssna-github-cli \
+  -w)" || {
+  echo "Error: could not read GH_TOKEN from the lyssna-github-cli Keychain item." >&2
+  exit 1
+}
+[[ -n "$GH_TOKEN" ]] || {
+  echo "Error: GH_TOKEN from Keychain is empty." >&2
+  exit 1
+}
+export GH_TOKEN
+
 if [[ "$continue_existing" == true ]]; then
   [[ -d "$worktree" ]] || {
     echo "Error: worktree does not exist: $worktree" >&2
