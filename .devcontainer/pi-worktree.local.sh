@@ -194,6 +194,18 @@ else
   echo "Creating worktree: $worktree"
   git worktree add -b "$branch" "$worktree" origin/main
 
+  # Mobile config files are deliberately gitignored but required at runtime.
+  # Seed every app's local config from the primary checkout into new worktrees.
+  for source_config in "$repo_root"/mobile/apps/*/config.ts; do
+    [[ -f "$source_config" ]] || continue
+
+    relative_config_path="${source_config#"$repo_root"/}"
+    target_config="$worktree/$relative_config_path"
+    mkdir -p "$(dirname "$target_config")"
+    cp "$source_config" "$target_config"
+    echo "Copied mobile config: $relative_config_path"
+  done
+
   for file in \
     "$worktree/.devcontainer/post-create.local.sh" \
     "$worktree/.devcontainer/compose.local.yaml"
