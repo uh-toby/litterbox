@@ -256,4 +256,4 @@ echo "Starting Pi..."
 exec devcontainer exec \
   --workspace-folder "$worktree" \
   --config "$network_devcontainer_config" \
-  bash -lc 'cd /app && exec pi'
+  bash -lc 'cd /app && exec pi --tui-mode fullscreen'
