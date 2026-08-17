@@ -248,9 +248,41 @@ if ! devcontainer exec "${devcontainer_args[@]}" true; then
   devcontainer up "${devcontainer_args[@]}"
 fi
 
-echo "Verifying SSH agent forwarding..."
+echo "Configuring GitHub SSH host verification..."
+# Pin GitHub's published Ed25519 host key rather than learning it with
+# ssh-keyscan or StrictHostKeyChecking=accept-new. The latter would make a
+# first-use connection vulnerable to a network-level man-in-the-middle attack.
 devcontainer exec "${devcontainer_args[@]}" \
-  bash -lc 'ssh-add -l >/dev/null'
+  bash -lc '
+    set -euo pipefail
+    ssh_dir="$HOME/.ssh"
+    known_hosts="$ssh_dir/known_hosts"
+    github_host_key="github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl"
+
+    install -d -m 700 "$ssh_dir"
+    touch "$known_hosts"
+    chmod 600 "$known_hosts"
+    ssh-keygen -R github.com -f "$known_hosts" >/dev/null 2>&1 || true
+    ssh-keygen -R "[github.com]:22" -f "$known_hosts" >/dev/null 2>&1 || true
+    printf "%s\\n" "$github_host_key" >>"$known_hosts"
+  '
+
+echo "Verifying SSH agent forwarding..."
+# `ssh-add -l` exits 1 when it can reach the agent but the agent has no
+# identities. That must not prevent reconnecting to Pi: Pi can authenticate
+# independently, and an identity can be added to the forwarded agent later.
+devcontainer exec "${devcontainer_args[@]}" \
+  bash -lc '
+    ssh-add -l >/dev/null
+    status=$?
+    case "$status" in
+      0) ;;
+      1)
+        echo "Warning: the forwarded SSH agent has no identities; Git-over-SSH will be unavailable until one is added." >&2
+        ;;
+      *) exit "$status" ;;
+    esac
+  '
 
 echo "Starting Pi..."
 exec devcontainer exec \
