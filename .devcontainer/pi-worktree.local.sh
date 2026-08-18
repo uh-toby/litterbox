@@ -37,6 +37,7 @@ case "${1:-}" in
 esac
 
 repo_root="$(git rev-parse --show-toplevel)"
+local_devcontainer_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 worktree_slug="${branch//\//-}"
 worktree="${repo_root}/.claude/worktrees/${worktree_slug}"
 git check-ref-format --branch "$branch" >/dev/null
@@ -175,18 +176,17 @@ GH_TOKEN="$(security find-generic-password \
 }
 export GH_TOKEN
 
-DD_API_KEY="$(security find-generic-password \
-  -a "$USER" \
-  -s lyssna-datadog-api-key \
-  -w)" || {
-  echo "Error: could not read DD_API_KEY from the lyssna-datadog-api-key Keychain item." >&2
-  exit 1
-}
-[[ -n "$DD_API_KEY" ]] || {
-  echo "Error: DD_API_KEY from Keychain is empty." >&2
-  exit 1
-}
-export DD_API_KEY
+for credential_volume in \
+  lyssna-pup \
+  lyssna-buildkite-keyrings \
+  lyssna-buildkite-keyring-session \
+  lyssna-sentry
+ do
+  if ! docker volume inspect "$credential_volume" >/dev/null 2>&1; then
+    echo "Creating shared credentials volume: $credential_volume"
+    docker volume create "$credential_volume" >/dev/null
+  fi
+ done
 
 if [[ "$continue_existing" == true ]]; then
   [[ -d "$worktree" ]] || {
@@ -219,16 +219,24 @@ else
     echo "Copied mobile config: $relative_config_path"
   done
 
-  for file in \
-    "$worktree/.devcontainer/post-create.local.sh" \
-    "$worktree/.devcontainer/compose.local.yaml"
-  do
-    [[ -f "$file" ]] || {
-      echo "Error: Husky did not seed $file" >&2
-      exit 1
-    }
-  done
 fi
+
+# The repository's post-checkout hook may seed its own local overrides. Replace
+# them with this launcher's paired setup so every worktree uses the same CLI
+# installation and credential volumes.
+for local_file in \
+  compose.local.yaml \
+  post-create.local.sh
+ do
+  source_file="$local_devcontainer_dir/$local_file"
+  target_file="$worktree/.devcontainer/$local_file"
+  [[ -f "$source_file" ]] || {
+    echo "Error: local devcontainer setup is missing $source_file" >&2
+    exit 1
+  }
+  cp "$source_file" "$target_file"
+ done
+chmod +x "$worktree/.devcontainer/post-create.local.sh"
 
 [[ -f "$worktree/.devcontainer/network/devcontainer.json" ]] || {
   echo "Error: network devcontainer configuration is missing from $worktree." >&2
@@ -282,6 +290,21 @@ devcontainer exec "${devcontainer_args[@]}" \
         ;;
       *) exit "$status" ;;
     esac
+  '
+
+echo "Checking CLI authentication..."
+devcontainer exec "${devcontainer_args[@]}" \
+  bash -lc '
+    set -euo pipefail
+    if ! pup auth status >/dev/null; then
+      echo "Pup is not authenticated. Run: pup auth login --read-only" >&2
+    fi
+    if ! bk auth status >/dev/null; then
+      echo "Buildkite is not authenticated. Run: bk auth login --org usabilityhub --scopes read_only" >&2
+    fi
+    if ! sentry info --no-defaults >/dev/null; then
+      echo "Sentry is not authenticated. Run: sentry login --global --auth-token <read-only-token>" >&2
+    fi
   '
 
 echo "Starting Pi..."
