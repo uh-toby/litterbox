@@ -9,6 +9,11 @@ services:
       # Fine-grained permissions pulled from the host Keychain by pi-worktree.local.sh.
       LINEAR_API_KEY: ${LINEAR_API_KEY:-}
       GH_TOKEN: ${GH_TOKEN:-}
+      # Pup uses these long-lived, agent-specific Datadog keys without requiring
+      # an OAuth keyring or D-Bus session.
+      DD_API_KEY: ${DD_API_KEY:-}
+      DD_APP_KEY: ${DD_APP_KEY:-}
+      DD_SITE: datadoghq.com
       BUILDKITE_ORGANIZATION_SLUG: usabilityhub
     volumes:
       - ~/Documents/agent-notes:/home/lyssna/Documents/agent-notes
@@ -24,17 +29,12 @@ services:
         source: ${HOME}/.pi/agent/auth.json
         target: /home/lyssna/.pi/agent/auth.json
         read_only: true
-      # Shared across worktrees so OAuth sessions persist.
-      - pup:/home/lyssna/.config/pup
       - buildkite-keyrings:/home/lyssna/.local/share/keyrings
       - buildkite-keyring-session:/home/lyssna/.local/share/keyring-session
       - sentry:/home/lyssna/.sentry
 
 volumes:
   pi-agent:
-  pup:
-    external: true
-    name: lyssna-pup
   buildkite-keyrings:
     external: true
     name: lyssna-buildkite-keyrings

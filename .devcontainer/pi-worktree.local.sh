@@ -4,36 +4,47 @@ set -euo pipefail
 usage() {
   cat >&2 <<EOF
 Usage:
-  $0 <branch-name>
+  $0 --create <branch-name>
+  $0 --connect <branch-name>
   $0 --continue <branch-name>
-  $0 --teardown <branch-name>
+  $0 --cleanup <branch-name>
 
-Without an option, creates a worktree at .claude/worktrees/<branch-name> and
-checks out a new branch with that name. --continue reconnects to an existing
-worktree's devcontainer, starting it when necessary. --teardown deletes that
-worktree's containers and removes the local worktree without deleting either
-its local or remote branch.
+--create creates a worktree at .claude/worktrees/<branch-name> and checks out
+a new branch with that name. --connect opens a shell in an existing, running
+worktree devcontainer. --continue reconnects to an existing worktree's
+devcontainer, starting it when necessary. --cleanup deletes that worktree's
+containers and removes the local worktree without deleting either its local or
+remote branch.
 EOF
   exit 2
 }
 
+setup=false
+connect_existing=false
 continue_existing=false
 teardown=false
 case "${1:-}" in
+  --create)
+    setup=true
+    branch="${2:-}"
+    [[ $# -eq 2 && -n "$branch" ]] || usage
+    ;;
+  --connect)
+    connect_existing=true
+    branch="${2:-}"
+    [[ $# -eq 2 && -n "$branch" ]] || usage
+    ;;
   --continue)
     continue_existing=true
     branch="${2:-}"
     [[ $# -eq 2 && -n "$branch" ]] || usage
     ;;
-  --teardown)
+  --cleanup)
     teardown=true
     branch="${2:-}"
     [[ $# -eq 2 && -n "$branch" ]] || usage
     ;;
-  *)
-    branch="${1:-}"
-    [[ $# -eq 1 && -n "$branch" ]] || usage
-    ;;
+  *) usage ;;
 esac
 
 repo_root="$(git rev-parse --show-toplevel)"
@@ -134,6 +145,31 @@ command -v devcontainer >/dev/null || {
   exit 1
 }
 
+if [[ "$connect_existing" == true ]]; then
+  [[ -d "$worktree" ]] || {
+    echo "Error: worktree does not exist: $worktree" >&2
+    exit 1
+  }
+
+  network_devcontainer_config="$worktree/.devcontainer/network/devcontainer.json"
+  [[ -f "$network_devcontainer_config" ]] || {
+    echo "Error: network devcontainer configuration is missing from $worktree." >&2
+    exit 1
+  }
+
+  devcontainer_args=(
+    --workspace-folder "$worktree"
+    --config "$network_devcontainer_config"
+  )
+  if ! devcontainer exec "${devcontainer_args[@]}" true; then
+    echo "Error: devcontainer is not running for $branch. Start it with: $0 --continue $branch" >&2
+    exit 1
+  fi
+
+  exec devcontainer exec "${devcontainer_args[@]}" \
+    bash -lc 'cd /app && exec bash -l'
+fi
+
 [[ -n "${SSH_AUTH_SOCK:-}" ]] || {
   echo "Error: SSH_AUTH_SOCK is not set." >&2
   echo "Start or select an SSH agent before running this script." >&2
@@ -176,8 +212,27 @@ GH_TOKEN="$(security find-generic-password \
 }
 export GH_TOKEN
 
+for datadog_credential in DD_API_KEY DD_APP_KEY; do
+  case "$datadog_credential" in
+    DD_API_KEY) keychain_service="lyssna-dd-api-key" ;;
+    DD_APP_KEY) keychain_service="lyssna-dd-app-key" ;;
+  esac
+  credential_value="$(security find-generic-password \
+    -a "$USER" \
+    -s "$keychain_service" \
+    -w)" || {
+    echo "Error: could not read $datadog_credential from the $keychain_service Keychain item." >&2
+    exit 1
+  }
+  [[ -n "$credential_value" ]] || {
+    echo "Error: $datadog_credential from Keychain is empty." >&2
+    exit 1
+  }
+  export "$datadog_credential=$credential_value"
+done
+unset credential_value keychain_service datadog_credential
+
 for credential_volume in \
-  lyssna-pup \
   lyssna-buildkite-keyrings \
   lyssna-buildkite-keyring-session \
   lyssna-sentry
@@ -193,7 +248,7 @@ if [[ "$continue_existing" == true ]]; then
     echo "Error: worktree does not exist: $worktree" >&2
     exit 1
   }
-else
+elif [[ "$setup" == true ]]; then
   [[ ! -e "$worktree" ]] || {
     echo "Error: worktree already exists: $worktree" >&2
     echo "Reconnect with: $0 --continue $branch" >&2
@@ -201,11 +256,16 @@ else
   }
 
   mkdir -p "$(dirname "$worktree")"
-  echo "Fetching origin/main..."
-  git fetch origin main
+  if git show-ref --verify --quiet "refs/heads/$branch"; then
+    echo "Creating worktree from existing branch: $branch"
+    git worktree add "$worktree" "$branch"
+  else
+    echo "Fetching origin/main..."
+    git fetch origin main
 
-  echo "Creating worktree: $worktree"
-  git worktree add -b "$branch" "$worktree" origin/main
+    echo "Creating worktree on new branch: $branch"
+    git worktree add -b "$branch" "$worktree" origin/main
+  fi
 
   # Mobile config files are deliberately gitignored but required at runtime.
   # Seed every app's local config from the primary checkout into new worktrees.
@@ -307,8 +367,6 @@ devcontainer exec "${devcontainer_args[@]}" \
     fi
   '
 
-echo "Starting Pi..."
-exec devcontainer exec \
-  --workspace-folder "$worktree" \
-  --config "$network_devcontainer_config" \
-  bash -lc 'cd /app && exec pi --tui-mode fullscreen'
+echo "Devcontainer ready. Connecting..."
+exec devcontainer exec "${devcontainer_args[@]}" \
+  bash -lc 'cd /app && exec bash -l'
