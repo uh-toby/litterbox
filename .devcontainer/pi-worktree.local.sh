@@ -215,7 +215,7 @@ export GH_TOKEN
 for shared_volume in \
   lyssna-pnpm-store \
   lyssna-buildkite-keyrings \
-  lyssna-buildkite-keyring-session \
+  lyssna-keyring-credentials \
   lyssna-pup \
   lyssna-sentry
  do
@@ -224,6 +224,28 @@ for shared_volume in \
     docker volume create "$shared_volume" >/dev/null
   fi
  done
+
+# Earlier setups stored the keyring password beside live D-Bus connection
+# details in one shared volume. Keep the existing encrypted keyring usable by
+# copying its password once into the durable-credentials volume, while leaving
+# the D-Bus session metadata behind. This only touches Docker volumes; running
+# containers keep their current mounts and processes.
+legacy_keyring_session_volume="lyssna-buildkite-keyring-session"
+keyring_credentials_volume="lyssna-keyring-credentials"
+if docker volume inspect "$legacy_keyring_session_volume" >/dev/null 2>&1; then
+  if docker run --rm \
+    --mount "type=volume,src=$legacy_keyring_session_volume,dst=/legacy,readonly" \
+    --mount "type=volume,src=$keyring_credentials_volume,dst=/credentials" \
+    alpine:3.21 \
+    sh -ec '[ -f /legacy/password ] && [ ! -e /credentials/password ]'; then
+    echo "Migrating the shared keyring password to its durable credentials volume..."
+    docker run --rm \
+      --mount "type=volume,src=$legacy_keyring_session_volume,dst=/legacy,readonly" \
+      --mount "type=volume,src=$keyring_credentials_volume,dst=/credentials" \
+      alpine:3.21 \
+      sh -ec 'cp /legacy/password /credentials/password && chmod 600 /credentials/password'
+  fi
+fi
 
 if [[ "$continue_existing" == true ]]; then
   [[ -d "$worktree" ]] || {

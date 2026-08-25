@@ -34,8 +34,11 @@ services:
       # OAuth client registrations and tokens. Both live outside the ephemeral
       # container filesystem so an interactive login is available to agents.
       - pup:/home/lyssna/.config/pup
+      # The encrypted keyring and its unlock password are shared so OAuth
+      # credentials remain available in every worktree. Runtime D-Bus session
+      # metadata deliberately stays container-local.
       - buildkite-keyrings:/home/lyssna/.local/share/keyrings
-      - buildkite-keyring-session:/home/lyssna/.local/share/keyring-session
+      - keyring-credentials:/home/lyssna/.local/share/keyring-credentials
       - sentry:/home/lyssna/.sentry
 
 volumes:
@@ -50,9 +53,9 @@ volumes:
   buildkite-keyrings:
     external: true
     name: lyssna-buildkite-keyrings
-  buildkite-keyring-session:
+  keyring-credentials:
     external: true
-    name: lyssna-buildkite-keyring-session
+    name: lyssna-keyring-credentials
   sentry:
     external: true
     name: lyssna-sentry

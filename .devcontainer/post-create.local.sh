@@ -128,16 +128,16 @@ fi
 mkdir -p "$HOME/.local/bin"
 cat > "$HOME/.local/bin/keyring-init.sh" << 'KEYRING_INIT_EOF'
 # Headless Secret Service (gnome-keyring) bootstrap. The first shell starts
-# one D-Bus/keyring session for the container; later interactive and agent
-# shells read the same connection details. This gives Pup's OAuth credentials
-# the same authentication context in all processes.
+# one D-Bus/keyring session for this container; later interactive and agent
+# shells in the same container read its connection details. OAuth credentials
+# and the password which unlocks them are shared separately between worktrees.
 #
-# This container has no systemd/logind, so nothing else creates
-# XDG_RUNTIME_DIR or starts a D-Bus session or the keyring daemon. Mirrored in
-# .devcontainer/post-create.local.sh so a container rebuild reproduces it.
+# D-Bus addresses and locks must remain container-local: they point at processes
+# and sockets which cannot be reached from another worktree container.
 
 _keyring_dir="$HOME/.local/share/keyring-session"
-_keyring_pass_file="$_keyring_dir/password"
+_keyring_credentials_dir="$HOME/.local/share/keyring-credentials"
+_keyring_pass_file="$_keyring_credentials_dir/password"
 _keyring_env_file="$_keyring_dir/environment"
 _keyring_lock_file="$_keyring_dir/lock"
 
@@ -162,8 +162,8 @@ _keyring_load_environment() {
     _keyring_alive
 }
 
-mkdir -p "$_keyring_dir"
-chmod 700 "$_keyring_dir"
+mkdir -p "$_keyring_dir" "$_keyring_credentials_dir"
+chmod 700 "$_keyring_dir" "$_keyring_credentials_dir"
 
 # Always prefer the shared session over an inherited D-Bus address. A shell
 # may have a live but private D-Bus session from before this setup; using it
@@ -199,7 +199,7 @@ if ! _keyring_load_environment; then
 fi
 
 unset -f _keyring_alive _keyring_load_environment
-unset _keyring_dir _keyring_pass_file _keyring_env_file _keyring_lock_file
+unset _keyring_dir _keyring_credentials_dir _keyring_pass_file _keyring_env_file _keyring_lock_file
 KEYRING_INIT_EOF
 
 keyring_hook='if [ -f "$HOME/.local/bin/keyring-init.sh" ]; then . "$HOME/.local/bin/keyring-init.sh"; fi'
@@ -213,11 +213,13 @@ done
 sudo mkdir -p \
   "$HOME/.config/pup" \
   "$HOME/.local/share/keyrings" \
+  "$HOME/.local/share/keyring-credentials" \
   "$HOME/.local/share/keyring-session" \
   "$HOME/.sentry"
 sudo chown "$(id -u):$(id -g)" \
   "$HOME/.config/pup" \
   "$HOME/.local/share/keyrings" \
+  "$HOME/.local/share/keyring-credentials" \
   "$HOME/.local/share/keyring-session" \
   "$HOME/.sentry"
 
