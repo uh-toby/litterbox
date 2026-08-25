@@ -212,15 +212,16 @@ GH_TOKEN="$(security find-generic-password \
 }
 export GH_TOKEN
 
-for credential_volume in \
+for shared_volume in \
+  lyssna-pnpm-store \
   lyssna-buildkite-keyrings \
   lyssna-buildkite-keyring-session \
   lyssna-pup \
   lyssna-sentry
  do
-  if ! docker volume inspect "$credential_volume" >/dev/null 2>&1; then
-    echo "Creating shared credentials volume: $credential_volume"
-    docker volume create "$credential_volume" >/dev/null
+  if ! docker volume inspect "$shared_volume" >/dev/null 2>&1; then
+    echo "Creating shared volume: $shared_volume"
+    docker volume create "$shared_volume" >/dev/null
   fi
  done
 

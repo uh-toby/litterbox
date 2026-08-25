@@ -18,6 +18,9 @@ services:
       - ~/Documents/agent-notes:/home/lyssna/Documents/agent-notes
       - ~/.agents:/home/lyssna/.agents
       - ~/.agents/skills:/home/lyssna/.claude/skills
+      # Share pnpm's content-addressable store between worktrees. node_modules
+      # remains worktree-local through the base Compose configuration.
+      - pnpm-store:/home/lyssna/.pnpm
       - pi-agent:/home/lyssna/.pi/agent
       # Docker Desktop's host SSH-agent forwarding socket.
       - type: bind
@@ -37,6 +40,10 @@ services:
 
 volumes:
   pi-agent:
+  # Shared package cache, created by pi-worktree.local.sh.
+  pnpm-store:
+    external: true
+    name: lyssna-pnpm-store
   pup:
     external: true
     name: lyssna-pup
