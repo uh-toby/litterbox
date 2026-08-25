@@ -32,6 +32,21 @@ services:
         source: ${HOME}/.pi/agent/auth.json
         target: /home/lyssna/.pi/agent/auth.json
         read_only: true
+      # Sessions are durable on the host and available to all newly created
+      # worktree containers. Pi still organises them by each environment's cwd.
+      - type: bind
+        source: ${HOME}/.pi/agent/sessions
+        target: /home/lyssna/.pi/agent/sessions
+      # The host is the source of truth for global Pi configuration and its
+      # appended system prompt. Pi writes harmless global metadata such as its
+      # last changelog version, so settings.json must remain writable.
+      - type: bind
+        source: ${HOME}/.pi/agent/settings.json
+        target: /home/lyssna/.pi/agent/settings.json
+      - type: bind
+        source: ${HOME}/.pi/agent/APPEND_SYSTEM.md
+        target: /home/lyssna/.pi/agent/APPEND_SYSTEM.md
+        read_only: true
       # Pup and Secret Service state stays in the container filesystem. The
       # current launcher never recreates a worktree container without cleanup,
       # so a named volume would add no useful durability and must not be shared
