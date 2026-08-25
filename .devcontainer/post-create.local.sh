@@ -43,6 +43,23 @@ if ! command -v pup >/dev/null 2>&1; then
   rm -rf "$pup_tmpdir"
 fi
 
+# Every invocation, including one executed directly by an agent rather than
+# from a shell, must join the shared D-Bus/keyring session before Pup starts.
+# Keep the upstream binary separate so this wrapper cannot recurse.
+if [ -x "$HOME/.local/bin/pup" ] && [ ! -x "$HOME/.local/bin/pup-bin" ]; then
+  mv "$HOME/.local/bin/pup" "$HOME/.local/bin/pup-bin"
+fi
+cat > "$HOME/.local/bin/pup" <<'PUP_WRAPPER_EOF'
+#!/bin/sh
+set -eu
+# OAuth is the shared agent credential. Ignore legacy API-key variables from
+# an already-running container until Compose can be recreated without them.
+unset DD_API_KEY DD_APP_KEY
+. "$HOME/.local/bin/keyring-init.sh"
+exec "$HOME/.local/bin/pup-bin" "$@"
+PUP_WRAPPER_EOF
+chmod 755 "$HOME/.local/bin/pup"
+
 # Install Buildkite's CLI from its latest GitHub release. It uses the system
 # keyring for its refreshable OAuth credentials.
 if ! command -v bk >/dev/null 2>&1; then
@@ -110,18 +127,19 @@ fi
 
 mkdir -p "$HOME/.local/bin"
 cat > "$HOME/.local/bin/keyring-init.sh" << 'KEYRING_INIT_EOF'
-# Headless Secret Service (gnome-keyring) bootstrap, so CLIs like `linear`
-# can store credentials in a real encrypted keyring instead of a plaintext
-# config file. The script can be sourced or run through BASH_ENV. Safe to run
-# repeatedly: it reuses a live session or starts a new one if needed.
+# Headless Secret Service (gnome-keyring) bootstrap. The first shell starts
+# one D-Bus/keyring session for the container; later interactive and agent
+# shells read the same connection details. This gives Pup's OAuth credentials
+# the same authentication context in all processes.
 #
 # This container has no systemd/logind, so nothing else creates
-# XDG_RUNTIME_DIR or starts a D-Bus session or the keyring daemon - this
-# script is that missing piece. Mirrored in
+# XDG_RUNTIME_DIR or starts a D-Bus session or the keyring daemon. Mirrored in
 # .devcontainer/post-create.local.sh so a container rebuild reproduces it.
 
 _keyring_dir="$HOME/.local/share/keyring-session"
 _keyring_pass_file="$_keyring_dir/password"
+_keyring_env_file="$_keyring_dir/environment"
+_keyring_lock_file="$_keyring_dir/lock"
 
 export XDG_RUNTIME_DIR="/run/user/$(id -u)"
 if [ ! -d "$XDG_RUNTIME_DIR" ]; then
@@ -131,35 +149,57 @@ if [ ! -d "$XDG_RUNTIME_DIR" ]; then
 fi
 
 _keyring_alive() {
-    [ -n "$DBUS_SESSION_BUS_ADDRESS" ] && dbus-send --session \
+    [ -n "${DBUS_SESSION_BUS_ADDRESS:-}" ] && dbus-send --session \
         --dest=org.freedesktop.DBus --print-reply \
         /org/freedesktop/DBus org.freedesktop.DBus.ListNames >/dev/null 2>&1
 }
 
-# A D-Bus address and PID are process-local. Never reuse them from a previous
-# container run; the shared files keep only the keyring password and database.
-if ! _keyring_alive; then
-    mkdir -p "$_keyring_dir"
-    chmod 700 "$_keyring_dir"
+_keyring_load_environment() {
+    [ -r "$_keyring_env_file" ] || return 1
+    # This file is written solely by this script with shell-quoted values.
+    # shellcheck disable=SC1090
+    . "$_keyring_env_file"
+    _keyring_alive
+}
 
-    # Persistent (disk-encrypted) collection requires a real, non-empty
-    # password - gnome-keyring silently refuses to create one from an empty
-    # password. Generated once and kept file-permission-protected; nothing
-    # ever prompts for it interactively.
-    if [ ! -f "$_keyring_pass_file" ]; then
-        (umask 177 && head -c32 /dev/urandom | base64 > "$_keyring_pass_file")
+mkdir -p "$_keyring_dir"
+chmod 700 "$_keyring_dir"
+
+# Always prefer the shared session over an inherited D-Bus address. A shell
+# may have a live but private D-Bus session from before this setup; using it
+# would make Pup prompt for a different, inaccessible keyring.
+if ! _keyring_load_environment; then
+    # Serialise setup so simultaneous agent subprocesses do not each create an
+    # isolated session. Recheck after acquiring the lock.
+    exec 9>"$_keyring_lock_file"
+    flock 9
+    if ! _keyring_load_environment; then
+        # Persistent (disk-encrypted) collection requires a real, non-empty
+        # password. Generated once and kept file-permission-protected; nothing
+        # ever prompts for it interactively.
+        if [ ! -f "$_keyring_pass_file" ]; then
+            (umask 177 && head -c32 /dev/urandom | base64 > "$_keyring_pass_file")
+        fi
+
+        eval "$(dbus-launch --sh-syntax)"
+        export DBUS_SESSION_BUS_ADDRESS DBUS_SESSION_BUS_PID
+        eval "$(gnome-keyring-daemon --login --components=secrets,pkcs11 < "$_keyring_pass_file")"
+        export GNOME_KEYRING_CONTROL
+
+        umask 177
+        {
+            printf 'export DBUS_SESSION_BUS_ADDRESS=%q\n' "$DBUS_SESSION_BUS_ADDRESS"
+            printf 'export DBUS_SESSION_BUS_PID=%q\n' "$DBUS_SESSION_BUS_PID"
+            printf 'export GNOME_KEYRING_CONTROL=%q\n' "$GNOME_KEYRING_CONTROL"
+            printf 'export XDG_RUNTIME_DIR=%q\n' "$XDG_RUNTIME_DIR"
+        } >"$_keyring_env_file"
     fi
-
-    eval "$(dbus-launch --sh-syntax)"
-    export DBUS_SESSION_BUS_ADDRESS DBUS_SESSION_BUS_PID
-
-    eval "$(gnome-keyring-daemon --login --components=secrets,pkcs11 < "$_keyring_pass_file")"
-    export GNOME_KEYRING_CONTROL
-
+    flock -u 9
+    exec 9>&-
 fi
 
-unset -f _keyring_alive
-unset _keyring_dir _keyring_pass_file
+unset -f _keyring_alive _keyring_load_environment
+unset _keyring_dir _keyring_pass_file _keyring_env_file _keyring_lock_file
 KEYRING_INIT_EOF
 
 keyring_hook='if [ -f "$HOME/.local/bin/keyring-init.sh" ]; then . "$HOME/.local/bin/keyring-init.sh"; fi'

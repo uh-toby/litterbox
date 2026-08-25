@@ -212,29 +212,10 @@ GH_TOKEN="$(security find-generic-password \
 }
 export GH_TOKEN
 
-for datadog_credential in DD_API_KEY DD_APP_KEY; do
-  case "$datadog_credential" in
-    DD_API_KEY) keychain_service="lyssna-dd-api-key" ;;
-    DD_APP_KEY) keychain_service="lyssna-dd-app-key" ;;
-  esac
-  credential_value="$(security find-generic-password \
-    -a "$USER" \
-    -s "$keychain_service" \
-    -w)" || {
-    echo "Error: could not read $datadog_credential from the $keychain_service Keychain item." >&2
-    exit 1
-  }
-  [[ -n "$credential_value" ]] || {
-    echo "Error: $datadog_credential from Keychain is empty." >&2
-    exit 1
-  }
-  export "$datadog_credential=$credential_value"
-done
-unset credential_value keychain_service datadog_credential
-
 for credential_volume in \
   lyssna-buildkite-keyrings \
   lyssna-buildkite-keyring-session \
+  lyssna-pup \
   lyssna-sentry
  do
   if ! docker volume inspect "$credential_volume" >/dev/null 2>&1; then
@@ -357,7 +338,12 @@ devcontainer exec "${devcontainer_args[@]}" \
   bash -lc '
     set -euo pipefail
     if ! pup auth status >/dev/null; then
-      echo "Pup is not authenticated. Run: pup auth login --read-only" >&2
+      if [ -t 0 ] && [ -t 1 ]; then
+        echo "Pup is not authenticated. Starting read-only OAuth login..." >&2
+        pup auth login --read-only
+      else
+        echo "Pup is not authenticated. Connect with --continue and run: pup auth login --read-only" >&2
+      fi
     fi
     if ! bk auth status >/dev/null; then
       echo "Buildkite is not authenticated. Run: bk auth login --org usabilityhub --scopes read_only" >&2
