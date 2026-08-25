@@ -7,12 +7,15 @@ Usage:
   $0 --create <branch-name>
   $0 --connect <branch-name>
   $0 --continue <branch-name>
+  $0 --recreate <branch-name>
   $0 --cleanup <branch-name>
 
 --create creates a worktree at .claude/worktrees/<branch-name> and checks out
 a new branch with that name. --connect opens a shell in an existing, running
 worktree devcontainer. --continue reconnects to an existing worktree's
-devcontainer, starting it when necessary. --cleanup deletes that worktree's
+devcontainer, starting it when necessary. --recreate replaces the worktree's
+primary devcontainer with the current local configuration while preserving its
+Git worktree and Compose project volumes. --cleanup deletes that worktree's
 containers and removes the local worktree without deleting either its local or
 remote branch.
 EOF
@@ -22,6 +25,7 @@ EOF
 setup=false
 connect_existing=false
 continue_existing=false
+recreate_existing=false
 teardown=false
 case "${1:-}" in
   --create)
@@ -39,6 +43,11 @@ case "${1:-}" in
     branch="${2:-}"
     [[ $# -eq 2 && -n "$branch" ]] || usage
     ;;
+  --recreate)
+    recreate_existing=true
+    branch="${2:-}"
+    [[ $# -eq 2 && -n "$branch" ]] || usage
+    ;;
   --cleanup)
     teardown=true
     branch="${2:-}"
@@ -52,6 +61,16 @@ repo_root="$(git rev-parse --show-toplevel)"
 # the link so newly added local files are sourced from Litterbox even before a
 # matching Hub-side symlink has been created.
 local_devcontainer_dir="$(dirname "$(realpath "${BASH_SOURCE[0]}")")"
+local_config_files=(
+  compose.local.yaml
+  post-create.local.sh
+  post-start.local.sh
+)
+local_config_fingerprint() {
+  shasum -a 256 "${local_config_files[@]/#/$local_devcontainer_dir/}" \
+    | shasum -a 256 \
+    | awk '{ print $1 }'
+}
 worktree_slug="${branch//\//-}"
 worktree="${repo_root}/.claude/worktrees/${worktree_slug}"
 git check-ref-format --branch "$branch" >/dev/null
@@ -266,11 +285,7 @@ fi
 # The repository's post-checkout hook may seed its own local overrides. Replace
 # them with this launcher's paired setup so every worktree uses the same CLI
 # installation and credential volumes.
-for local_file in \
-  compose.local.yaml \
-  post-create.local.sh \
-  post-start.local.sh
- do
+for local_file in "${local_config_files[@]}"; do
   source_file="$local_devcontainer_dir/$local_file"
   target_file="$worktree/.devcontainer/$local_file"
   [[ -f "$source_file" ]] || {
@@ -283,6 +298,15 @@ chmod +x \
   "$worktree/.devcontainer/post-create.local.sh" \
   "$worktree/.devcontainer/post-start.local.sh"
 
+current_local_config_fingerprint="$(local_config_fingerprint)"
+# Compose labels the container with this value. Pass it only to `devcontainer
+# up`: the base host-side initializer rewrites .devcontainer/.env, so storing
+# it there would be racy and would also expose launcher bookkeeping to Rails.
+run_devcontainer_up() {
+  LOCAL_CONFIG_FINGERPRINT="$current_local_config_fingerprint" \
+    devcontainer up "${devcontainer_args[@]}" "$@"
+}
+
 [[ -f "$worktree/.devcontainer/network/devcontainer.json" ]] || {
   echo "Error: network devcontainer configuration is missing from $worktree." >&2
   exit 1
@@ -293,12 +317,50 @@ devcontainer_args=(
   --workspace-folder "$worktree"
   --config "$network_devcontainer_config"
 )
+local_config_label="lyssna.local_config_fingerprint"
+# Identify the primary service by its Compose working directory instead of an
+# inferred Dev Containers label, which is not present on Compose services.
+existing_container="$(docker ps --all --quiet \
+  --filter "label=com.docker.compose.project.working_dir=$worktree/.devcontainer" \
+  --filter "label=com.docker.compose.service=rails-app" \
+  | head -n 1)"
 
-# `devcontainer exec` only succeeds when the existing container is running. Try
-# it first so reconnecting does not recreate or restart a healthy container.
-if ! devcontainer exec "${devcontainer_args[@]}" true; then
+if [[ "$recreate_existing" == true ]]; then
+  [[ -n "$existing_container" ]] || {
+    echo "Error: devcontainer does not exist for $branch. Start it with: $0 --continue $branch" >&2
+    exit 1
+  }
+
+  echo "Recreating devcontainer with current local configuration..."
+  echo "Compose project volumes will be preserved. Container-local Pup credentials will be removed." >&2
+  # Remove only the primary container. This avoids relying on Dev Containers'
+  # inferred ID label, and leaves the Compose project's databases, caches, and
+  # supporting services intact.
+  docker rm --force "$existing_container" >/dev/null
+  run_devcontainer_up
+  existing_container="$(docker ps --all --quiet \
+    --filter "label=com.docker.compose.project.working_dir=$worktree/.devcontainer" \
+    --filter "label=com.docker.compose.service=rails-app" \
+    | head -n 1)"
+elif ! devcontainer exec "${devcontainer_args[@]}" true; then
   echo "Existing devcontainer is not running; starting it..."
-  devcontainer up "${devcontainer_args[@]}"
+  run_devcontainer_up
+  existing_container="$(docker ps --all --quiet \
+    --filter "label=com.docker.compose.project.working_dir=$worktree/.devcontainer" \
+    --filter "label=com.docker.compose.service=rails-app" \
+    | head -n 1)"
+fi
+
+# Existing containers predate fingerprint labels, and `--continue` deliberately
+# keeps a healthy container running. In either case, make any configuration
+# drift visible without silently applying it.
+if [[ -n "$existing_container" ]]; then
+  applied_local_config_fingerprint="$(docker inspect --format "{{ index .Config.Labels \"$local_config_label\" }}" "$existing_container")"
+  if [[ "$applied_local_config_fingerprint" != "$current_local_config_fingerprint" ]]; then
+    echo "Warning: local devcontainer configuration has changed since this container was created." >&2
+    echo "This session uses the existing container configuration." >&2
+    echo "Apply the current configuration with: $0 --recreate $branch" >&2
+  fi
 fi
 
 echo "Configuring GitHub SSH host verification..."

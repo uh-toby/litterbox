@@ -2,6 +2,8 @@
 # See .devcontainer/compose.yaml for the base service config to extend.
 services:
   rails-app:
+    labels:
+      lyssna.local_config_fingerprint: ${LOCAL_CONFIG_FINGERPRINT:-unknown}
     environment:
       SSH_AUTH_SOCK: /run/host-services/ssh-auth.sock
       # The local post-start hook owns the fixed headless Secret Service socket.
