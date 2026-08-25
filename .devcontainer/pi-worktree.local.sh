@@ -243,7 +243,7 @@ if docker volume inspect "$legacy_keyring_session_volume" >/dev/null 2>&1; then
       --mount "type=volume,src=$legacy_keyring_session_volume,dst=/legacy,readonly" \
       --mount "type=volume,src=$keyring_credentials_volume,dst=/credentials" \
       alpine:3.21 \
-      sh -ec 'cp /legacy/password /credentials/password && chmod 600 /credentials/password'
+      sh -ec 'cp /legacy/password /credentials/password && chown 1000:1000 /credentials/password && chmod 600 /credentials/password'
   fi
 fi
 

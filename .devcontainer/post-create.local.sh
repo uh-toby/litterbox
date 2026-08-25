@@ -44,7 +44,7 @@ if ! command -v pup >/dev/null 2>&1; then
 fi
 
 # Every invocation, including one executed directly by an agent rather than
-# from a shell, must join the shared D-Bus/keyring session before Pup starts.
+# from a shell, must start or join this container's D-Bus/keyring session before Pup starts.
 # Keep the upstream binary separate so this wrapper cannot recurse.
 if [ -x "$HOME/.local/bin/pup" ] && [ ! -x "$HOME/.local/bin/pup-bin" ]; then
   mv "$HOME/.local/bin/pup" "$HOME/.local/bin/pup-bin"
@@ -184,7 +184,7 @@ if ! _keyring_load_environment; then
         eval "$(dbus-launch --sh-syntax)"
         export DBUS_SESSION_BUS_ADDRESS DBUS_SESSION_BUS_PID
         eval "$(gnome-keyring-daemon --login --components=secrets,pkcs11 < "$_keyring_pass_file")"
-        export GNOME_KEYRING_CONTROL
+        export GNOME_KEYRING_CONTROL="${GNOME_KEYRING_CONTROL:-}"
 
         umask 177
         {
