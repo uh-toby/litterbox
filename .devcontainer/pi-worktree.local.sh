@@ -192,59 +192,61 @@ if [[ "$connect_existing" == true ]]; then
     bash -lc 'cd /app && exec bash -l'
 fi
 
-[[ -n "${SSH_AUTH_SOCK:-}" ]] || {
-  echo "Error: SSH_AUTH_SOCK is not set." >&2
-  echo "Start or select an SSH agent before running this script." >&2
-  exit 1
+prepare_host_credentials() {
+  [[ -n "${SSH_AUTH_SOCK:-}" ]] || {
+    echo "Error: SSH_AUTH_SOCK is not set." >&2
+    echo "Start or select an SSH agent before creating or recreating a devcontainer." >&2
+    return 1
+  }
+
+  [[ -S "$SSH_AUTH_SOCK" ]] || {
+    echo "Error: SSH agent socket does not exist: $SSH_AUTH_SOCK" >&2
+    return 1
+  }
+
+  command -v security >/dev/null || {
+    echo "Error: macOS security CLI is not installed." >&2
+    return 1
+  }
+
+  LINEAR_API_KEY="$(security find-generic-password \
+    -a "$USER" \
+    -s lyssna-linear-readonly \
+    -w)" || {
+    echo "Error: could not read LINEAR_API_KEY from the lyssna-linear-readonly Keychain item." >&2
+    return 1
+  }
+  [[ -n "$LINEAR_API_KEY" ]] || {
+    echo "Error: LINEAR_API_KEY from Keychain is empty." >&2
+    return 1
+  }
+  export LINEAR_API_KEY
+
+  GH_TOKEN="$(security find-generic-password \
+    -a "$USER" \
+    -s lyssna-github-cli \
+    -w)" || {
+    echo "Error: could not read GH_TOKEN from the lyssna-github-cli Keychain item." >&2
+    return 1
+  }
+  [[ -n "$GH_TOKEN" ]] || {
+    echo "Error: GH_TOKEN from Keychain is empty." >&2
+    return 1
+  }
+  export GH_TOKEN
+
+  for shared_volume in \
+    lyssna-pnpm-store \
+    lyssna-sentry
+  do
+    if ! docker volume inspect "$shared_volume" >/dev/null 2>&1; then
+      echo "Creating shared volume: $shared_volume"
+      docker volume create "$shared_volume" >/dev/null
+    fi
+  done
 }
 
-[[ -S "$SSH_AUTH_SOCK" ]] || {
-  echo "Error: SSH agent socket does not exist: $SSH_AUTH_SOCK" >&2
-  exit 1
-}
-
-command -v security >/dev/null || {
-  echo "Error: macOS security CLI is not installed." >&2
-  exit 1
-}
-
-LINEAR_API_KEY="$(security find-generic-password \
-  -a "$USER" \
-  -s lyssna-linear-readonly \
-  -w)" || {
-  echo "Error: could not read LINEAR_API_KEY from the lyssna-linear-readonly Keychain item." >&2
-  exit 1
-}
-[[ -n "$LINEAR_API_KEY" ]] || {
-  echo "Error: LINEAR_API_KEY from Keychain is empty." >&2
-  exit 1
-}
-export LINEAR_API_KEY
-
-GH_TOKEN="$(security find-generic-password \
-  -a "$USER" \
-  -s lyssna-github-cli \
-  -w)" || {
-  echo "Error: could not read GH_TOKEN from the lyssna-github-cli Keychain item." >&2
-  exit 1
-}
-[[ -n "$GH_TOKEN" ]] || {
-  echo "Error: GH_TOKEN from Keychain is empty." >&2
-  exit 1
-}
-export GH_TOKEN
-
-for shared_volume in \
-  lyssna-pnpm-store \
-  lyssna-sentry
- do
-  if ! docker volume inspect "$shared_volume" >/dev/null 2>&1; then
-    echo "Creating shared volume: $shared_volume"
-    docker volume create "$shared_volume" >/dev/null
-  fi
- done
-
-if [[ "$continue_existing" == true ]]; then
+if [[ "$continue_existing" == true || "$recreate_existing" == true ]]; then
   [[ -d "$worktree" ]] || {
     echo "Error: worktree does not exist: $worktree" >&2
     exit 1
@@ -303,6 +305,7 @@ current_local_config_fingerprint="$(local_config_fingerprint)"
 # up`: the base host-side initializer rewrites .devcontainer/.env, so storing
 # it there would be racy and would also expose launcher bookkeeping to Rails.
 run_devcontainer_up() {
+  prepare_host_credentials
   LOCAL_CONFIG_FINGERPRINT="$current_local_config_fingerprint" \
     devcontainer up "${devcontainer_args[@]}" "$@"
 }
