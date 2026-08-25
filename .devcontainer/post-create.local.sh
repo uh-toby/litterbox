@@ -18,6 +18,12 @@ fi
 # available in the devcontainer, and ~/.local/bin is already on PATH.
 # https://github.com/DataDog/pup
 mkdir -p "$HOME/.local/bin"
+# Earlier local setups wrapped Pup to lazily start Secret Service. A container
+# recreation can retain the global pnpm volume, so restore the upstream binary
+# before applying the fixed post-start session model.
+if [ -x "$HOME/.local/bin/pup-bin" ]; then
+  mv -f "$HOME/.local/bin/pup-bin" "$HOME/.local/bin/pup"
+fi
 if ! command -v pup >/dev/null 2>&1; then
   case "$(uname -m)" in
     aarch64 | arm64) pup_arch="arm64" ;;
@@ -43,25 +49,11 @@ if ! command -v pup >/dev/null 2>&1; then
   rm -rf "$pup_tmpdir"
 fi
 
-# Every invocation, including one executed directly by an agent rather than
-# from a shell, must start or join this container's D-Bus/keyring session before Pup starts.
-# Keep the upstream binary separate so this wrapper cannot recurse.
-if [ -x "$HOME/.local/bin/pup" ] && [ ! -x "$HOME/.local/bin/pup-bin" ]; then
-  mv "$HOME/.local/bin/pup" "$HOME/.local/bin/pup-bin"
-fi
-cat > "$HOME/.local/bin/pup" <<'PUP_WRAPPER_EOF'
-#!/bin/sh
-set -eu
-# OAuth is the shared agent credential. Ignore legacy API-key variables from
-# an already-running container until Compose can be recreated without them.
-unset DD_API_KEY DD_APP_KEY
-. "$HOME/.local/bin/keyring-init.sh"
-exec "$HOME/.local/bin/pup-bin" "$@"
-PUP_WRAPPER_EOF
-chmod 755 "$HOME/.local/bin/pup"
-
 # Install Buildkite's CLI from its latest GitHub release. It uses the system
 # keyring for its refreshable OAuth credentials.
+if [ -x "$HOME/.local/bin/bk-bin" ]; then
+  mv -f "$HOME/.local/bin/bk-bin" "$HOME/.local/bin/bk"
+fi
 if ! command -v bk >/dev/null 2>&1; then
   case "$(uname -m)" in
     aarch64 | arm64) bk_arch="arm64" ;;
@@ -112,116 +104,17 @@ if ! command -v sentry >/dev/null 2>&1; then
 fi
 
 # Set up a headless system keyring (gnome-keyring's Secret Service over
-# D-Bus) so CLIs like `linear auth login` can store credentials encrypted
-# at rest instead of falling back to a plaintext credentials file.
-#
-# This container has no systemd/logind, so nothing normally starts a D-Bus
-# session or the keyring daemon - keyring-init.sh (sourced from
-# ~/.bashrc/~/.zshrc below) is that missing piece, started lazily on the
-# first interactive shell of each container run.
+# D-Bus) so OAuth-capable CLIs store credentials encrypted at rest. The local
+# post-start hook starts and unlocks the one fixed session for this container.
 if ! command -v gnome-keyring-daemon >/dev/null 2>&1; then
   echo "Installing gnome-keyring for system keyring support..."
   sudo apt-get update -qq
   sudo apt-get install --no-install-recommends -y gnome-keyring dbus-x11 libsecret-tools
 fi
 
-mkdir -p "$HOME/.local/bin"
-cat > "$HOME/.local/bin/keyring-init.sh" << 'KEYRING_INIT_EOF'
-# Headless Secret Service (gnome-keyring) bootstrap. The first shell starts
-# one D-Bus/keyring session for this container; later interactive and agent
-# shells in the same container read its connection details. OAuth credentials
-# and the password which unlocks them are shared separately between worktrees.
-#
-# D-Bus addresses and locks must remain container-local: they point at processes
-# and sockets which cannot be reached from another worktree container.
-
-_keyring_dir="$HOME/.local/share/keyring-session"
-_keyring_credentials_dir="$HOME/.local/share/keyring-credentials"
-_keyring_pass_file="$_keyring_credentials_dir/password"
-_keyring_env_file="$_keyring_dir/environment"
-_keyring_lock_file="$_keyring_dir/lock"
-
-export XDG_RUNTIME_DIR="/run/user/$(id -u)"
-if [ ! -d "$XDG_RUNTIME_DIR" ]; then
-    sudo mkdir -p "$XDG_RUNTIME_DIR"
-    sudo chown "$(id -u):$(id -g)" "$XDG_RUNTIME_DIR"
-    sudo chmod 700 "$XDG_RUNTIME_DIR"
-fi
-
-_keyring_alive() {
-    [ -n "${DBUS_SESSION_BUS_ADDRESS:-}" ] && dbus-send --session \
-        --dest=org.freedesktop.DBus --print-reply \
-        /org/freedesktop/DBus org.freedesktop.DBus.ListNames >/dev/null 2>&1
-}
-
-_keyring_load_environment() {
-    [ -r "$_keyring_env_file" ] || return 1
-    # This file is written solely by this script with shell-quoted values.
-    # shellcheck disable=SC1090
-    . "$_keyring_env_file"
-    _keyring_alive
-}
-
-mkdir -p "$_keyring_dir" "$_keyring_credentials_dir"
-chmod 700 "$_keyring_dir" "$_keyring_credentials_dir"
-
-# Always prefer the shared session over an inherited D-Bus address. A shell
-# may have a live but private D-Bus session from before this setup; using it
-# would make Pup prompt for a different, inaccessible keyring.
-if ! _keyring_load_environment; then
-    # Serialise setup so simultaneous agent subprocesses do not each create an
-    # isolated session. Recheck after acquiring the lock.
-    exec 9>"$_keyring_lock_file"
-    flock 9
-    if ! _keyring_load_environment; then
-        # Persistent (disk-encrypted) collection requires a real, non-empty
-        # password. Generated once and kept file-permission-protected; nothing
-        # ever prompts for it interactively.
-        if [ ! -f "$_keyring_pass_file" ]; then
-            (umask 177 && head -c32 /dev/urandom | base64 > "$_keyring_pass_file")
-        fi
-
-        eval "$(dbus-launch --sh-syntax)"
-        export DBUS_SESSION_BUS_ADDRESS DBUS_SESSION_BUS_PID
-        eval "$(gnome-keyring-daemon --login --components=secrets,pkcs11 < "$_keyring_pass_file")"
-        export GNOME_KEYRING_CONTROL="${GNOME_KEYRING_CONTROL:-}"
-
-        umask 177
-        {
-            printf 'export DBUS_SESSION_BUS_ADDRESS=%q\n' "$DBUS_SESSION_BUS_ADDRESS"
-            printf 'export DBUS_SESSION_BUS_PID=%q\n' "$DBUS_SESSION_BUS_PID"
-            printf 'export GNOME_KEYRING_CONTROL=%q\n' "$GNOME_KEYRING_CONTROL"
-            printf 'export XDG_RUNTIME_DIR=%q\n' "$XDG_RUNTIME_DIR"
-        } >"$_keyring_env_file"
-    fi
-    flock -u 9
-    exec 9>&-
-fi
-
-unset -f _keyring_alive _keyring_load_environment
-unset _keyring_dir _keyring_credentials_dir _keyring_pass_file _keyring_env_file _keyring_lock_file
-KEYRING_INIT_EOF
-
-keyring_hook='if [ -f "$HOME/.local/bin/keyring-init.sh" ]; then . "$HOME/.local/bin/keyring-init.sh"; fi'
-for rc in "$HOME/.bashrc" "$HOME/.zshrc"; do
-  if [ -f "$rc" ] && ! grep -q "keyring-init.sh" "$rc"; then
-    printf '\n# Headless Secret Service for CLIs (e.g. `linear`) that store credentials\n# in a system keyring rather than a plaintext file. See\n# .devcontainer/post-create.local.sh for the one-time setup this relies on.\n%s\n' "$keyring_hook" >> "$rc"
-  fi
-done
-
 # Shared credential volumes are initially root-owned.
-sudo mkdir -p \
-  "$HOME/.config/pup" \
-  "$HOME/.local/share/keyrings" \
-  "$HOME/.local/share/keyring-credentials" \
-  "$HOME/.local/share/keyring-session" \
-  "$HOME/.sentry"
-sudo chown "$(id -u):$(id -g)" \
-  "$HOME/.config/pup" \
-  "$HOME/.local/share/keyrings" \
-  "$HOME/.local/share/keyring-credentials" \
-  "$HOME/.local/share/keyring-session" \
-  "$HOME/.sentry"
+sudo mkdir -p "$HOME/.sentry"
+sudo chown "$(id -u):$(id -g)" "$HOME/.sentry"
 
 # Install Pi and persist its project-independent configuration and sessions in the
 # worktree's named Docker volume (see compose.local.yaml).

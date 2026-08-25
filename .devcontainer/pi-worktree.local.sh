@@ -48,7 +48,10 @@ case "${1:-}" in
 esac
 
 repo_root="$(git rev-parse --show-toplevel)"
-local_devcontainer_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# This launcher is symlinked into Hub's ignored .devcontainer directory. Resolve
+# the link so newly added local files are sourced from Litterbox even before a
+# matching Hub-side symlink has been created.
+local_devcontainer_dir="$(dirname "$(realpath "${BASH_SOURCE[0]}")")"
 worktree_slug="${branch//\//-}"
 worktree="${repo_root}/.claude/worktrees/${worktree_slug}"
 git check-ref-format --branch "$branch" >/dev/null
@@ -214,9 +217,6 @@ export GH_TOKEN
 
 for shared_volume in \
   lyssna-pnpm-store \
-  lyssna-buildkite-keyrings \
-  lyssna-keyring-credentials \
-  lyssna-pup \
   lyssna-sentry
  do
   if ! docker volume inspect "$shared_volume" >/dev/null 2>&1; then
@@ -224,28 +224,6 @@ for shared_volume in \
     docker volume create "$shared_volume" >/dev/null
   fi
  done
-
-# Earlier setups stored the keyring password beside live D-Bus connection
-# details in one shared volume. Keep the existing encrypted keyring usable by
-# copying its password once into the durable-credentials volume, while leaving
-# the D-Bus session metadata behind. This only touches Docker volumes; running
-# containers keep their current mounts and processes.
-legacy_keyring_session_volume="lyssna-buildkite-keyring-session"
-keyring_credentials_volume="lyssna-keyring-credentials"
-if docker volume inspect "$legacy_keyring_session_volume" >/dev/null 2>&1; then
-  if docker run --rm \
-    --mount "type=volume,src=$legacy_keyring_session_volume,dst=/legacy,readonly" \
-    --mount "type=volume,src=$keyring_credentials_volume,dst=/credentials" \
-    alpine:3.21 \
-    sh -ec '[ -f /legacy/password ] && [ ! -e /credentials/password ]'; then
-    echo "Migrating the shared keyring password to its durable credentials volume..."
-    docker run --rm \
-      --mount "type=volume,src=$legacy_keyring_session_volume,dst=/legacy,readonly" \
-      --mount "type=volume,src=$keyring_credentials_volume,dst=/credentials" \
-      alpine:3.21 \
-      sh -ec 'cp /legacy/password /credentials/password && chown 1000:1000 /credentials/password && chmod 600 /credentials/password'
-  fi
-fi
 
 if [[ "$continue_existing" == true ]]; then
   [[ -d "$worktree" ]] || {
@@ -290,7 +268,8 @@ fi
 # installation and credential volumes.
 for local_file in \
   compose.local.yaml \
-  post-create.local.sh
+  post-create.local.sh \
+  post-start.local.sh
  do
   source_file="$local_devcontainer_dir/$local_file"
   target_file="$worktree/.devcontainer/$local_file"
@@ -300,7 +279,9 @@ for local_file in \
   }
   cp "$source_file" "$target_file"
  done
-chmod +x "$worktree/.devcontainer/post-create.local.sh"
+chmod +x \
+  "$worktree/.devcontainer/post-create.local.sh" \
+  "$worktree/.devcontainer/post-start.local.sh"
 
 [[ -f "$worktree/.devcontainer/network/devcontainer.json" ]] || {
   echo "Error: network devcontainer configuration is missing from $worktree." >&2
@@ -356,25 +337,7 @@ devcontainer exec "${devcontainer_args[@]}" \
     esac
   '
 
-echo "Checking CLI authentication..."
-devcontainer exec "${devcontainer_args[@]}" \
-  bash -lc '
-    set -euo pipefail
-    if ! pup auth status >/dev/null; then
-      if [ -t 0 ] && [ -t 1 ]; then
-        echo "Pup is not authenticated. Starting read-only OAuth login..." >&2
-        pup auth login --read-only
-      else
-        echo "Pup is not authenticated. Connect with --continue and run: pup auth login --read-only" >&2
-      fi
-    fi
-    if ! bk auth status >/dev/null; then
-      echo "Buildkite is not authenticated. Run: bk auth login --org usabilityhub --scopes read_only" >&2
-    fi
-    if ! sentry info --no-defaults >/dev/null; then
-      echo "Sentry is not authenticated. Run: sentry login --global --auth-token <read-only-token>" >&2
-    fi
-  '
+echo "Pup is available with read-only OAuth when needed: pup auth login --read-only" >&2
 
 echo "Devcontainer ready. Connecting..."
 exec devcontainer exec "${devcontainer_args[@]}" \
