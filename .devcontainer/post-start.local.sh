@@ -11,6 +11,13 @@ keyring_dir="$HOME/.local/share/keyring-session"
 password_file="$keyring_dir/password"
 lock_file="$keyring_dir/lock"
 
+secret_service_registered() {
+  dbus-send --session \
+    --dest=org.freedesktop.DBus --print-reply \
+    /org/freedesktop/DBus org.freedesktop.DBus.ListNames 2>/dev/null \
+    | grep -q '"org.freedesktop.secrets"'
+}
+
 secret_service_ready() {
   dbus-send --session \
     --dest=org.freedesktop.secrets --print-reply \
@@ -19,6 +26,14 @@ secret_service_ready() {
     string:org.freedesktop.Secret.Collection string:Locked 2>/dev/null \
     | awk '/boolean/ { print $NF; exit }' \
     | grep -qx false
+}
+
+secret_service_pid() {
+  dbus-send --session \
+    --dest=org.freedesktop.DBus --print-reply \
+    /org/freedesktop/DBus org.freedesktop.DBus.GetConnectionUnixProcessID \
+    string:org.freedesktop.secrets 2>/dev/null \
+    | awk '/uint32/ { print $NF; exit }'
 }
 
 sudo install -d -o "$(id -u)" -g "$(id -g)" -m 700 "$runtime_dir"
@@ -30,10 +45,6 @@ install -d -m 700 "$keyring_dir"
 # ensures those invocations share the one container-local session.
 exec 9>"$lock_file"
 flock 9
-
-if secret_service_ready; then
-  exit 0
-fi
 
 if [[ ! -f "$password_file" ]]; then
   (umask 177 && head -c32 /dev/urandom | base64 >"$password_file")
@@ -52,6 +63,26 @@ if ! dbus-send --session \
   # where they can otherwise be created as mode 0600.
   install -d -m 700 "$runtime_dir/dbus-1/services" "$runtime_dir/keyring"
   dbus-daemon --session --address="$DBUS_SESSION_BUS_ADDRESS" --fork --nopidfile
+fi
+
+# Do not query org.freedesktop.secrets before --login. D-Bus activation would
+# start gnome-keyring without the password and leave its default collection
+# locked. A pre-existing locked daemon can only be one from that old race, so
+# stop it and initialise it with this container's persistent password instead.
+if secret_service_registered; then
+  if secret_service_ready; then
+    exit 0
+  fi
+
+  keyring_pid="$(secret_service_pid)"
+  if [[ -n "$keyring_pid" ]]; then
+    kill "$keyring_pid"
+    for _ in {1..20}; do
+      secret_service_registered || break
+      sleep 0.1
+    done
+  fi
+  rm -rf "$runtime_dir/keyring" "$runtime_dir"/keyring-*
 fi
 
 # --login unlocks the persistent collection. Starting the Secret Service
