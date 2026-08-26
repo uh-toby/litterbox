@@ -1,6 +1,6 @@
 # Personal Hub devcontainer overlay
 
-These files are symlinked into `~/projects/hub/.devcontainer/` and are copied into worktrees by `pi-worktree.local.sh`. They extend Hub's tracked devcontainer configuration with personal agent tooling and credentials.
+These files are symlinked into `~/projects/hub/.devcontainer/` and are copied into worktrees by `hub-workflow.local.sh`. They extend Hub's tracked devcontainer configuration with personal agent tooling and credentials.
 
 ## Trust model
 

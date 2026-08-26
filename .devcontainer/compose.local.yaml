@@ -9,7 +9,7 @@ services:
       # The local post-start hook owns the fixed headless Secret Service socket.
       XDG_RUNTIME_DIR: /run/user/1000
       DBUS_SESSION_BUS_ADDRESS: unix:path=/run/user/1000/bus
-      # Fine-grained permissions pulled from the host Keychain by pi-worktree.local.sh.
+      # Fine-grained permissions pulled from the host Keychain by hub-workflow.local.sh.
       LINEAR_API_KEY: ${LINEAR_API_KEY:-}
       GH_TOKEN: ${GH_TOKEN:-}
       # Pup uses the shared OAuth session in the Secret Service. Do not set
@@ -65,7 +65,7 @@ services:
 
 volumes:
   pi-agent:
-  # Shared package cache, created by pi-worktree.local.sh.
+  # Shared package cache, created by hub-workflow.local.sh.
   pnpm-store:
     external: true
     name: lyssna-pnpm-store
