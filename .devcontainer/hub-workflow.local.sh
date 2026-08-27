@@ -235,6 +235,20 @@ prepare_host_credentials() {
   }
   export GH_TOKEN
 
+  # `bk auth login` uses a loopback OAuth callback inside the container, which a
+  # host browser cannot reach. Use a dedicated read-only API token from the host
+  # Keychain instead. Buildkite is optional, so do not prevent unrelated
+  # devcontainer workflows when the token has not been configured yet.
+  if BUILDKITE_API_TOKEN="$(security find-generic-password \
+    -a "$USER" \
+    -s lyssna-buildkite-readonly \
+    -w 2>/dev/null)" && [[ -n "$BUILDKITE_API_TOKEN" ]]; then
+    export BUILDKITE_API_TOKEN
+  else
+    unset BUILDKITE_API_TOKEN
+    echo "Warning: Buildkite is unavailable. Add a read-only token to the lyssna-buildkite-readonly Keychain item." >&2
+  fi
+
   for shared_volume in \
     lyssna-pnpm-store \
     lyssna-sentry

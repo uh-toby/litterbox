@@ -12,6 +12,9 @@ services:
       # Fine-grained permissions pulled from the host Keychain by hub-workflow.local.sh.
       LINEAR_API_KEY: ${LINEAR_API_KEY:-}
       GH_TOKEN: ${GH_TOKEN:-}
+      # A dedicated, read-only Buildkite API token. OAuth cannot redirect a host
+      # browser to bk's loopback callback listener inside this container.
+      BUILDKITE_API_TOKEN: ${BUILDKITE_API_TOKEN:-}
       # Pup uses the shared OAuth session in the Secret Service. Do not set
       # DD_API_KEY/DD_APP_KEY: they are legacy credentials and cause Pup to
       # fall back to an invalid API-key session when the keyring is unavailable.

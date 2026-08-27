@@ -9,7 +9,8 @@ All worktrees started with this overlay are trusted local development environmen
 - GitHub CLI authentication is shared through Hub's `lyssna-gh` Docker volume. `GH_TOKEN` is also supplied from the macOS Keychain because tools and agent workflows may require it directly. It is a fine-grained, read-only token.
 - The host SSH agent is forwarded. It currently contains only the GitHub SSH identity.
 - Pi authentication, sessions, settings, and appended system prompt are shared from the host. `auth.json` and `APPEND_SYSTEM.md` are read-only; Pi writes session and settings metadata.
-- Pup and Buildkite OAuth credentials, the Secret Service database, its password, and its D-Bus runtime state are per-container. Recreated containers need to authenticate again.
+- Pup OAuth credentials, the Secret Service database, its password, and its D-Bus runtime state are per-container. Recreated containers need to authenticate Pup again.
+- Buildkite uses a dedicated, read-only API token read from the host Keychain and passed as `BUILDKITE_API_TOKEN`. The CLI's interactive OAuth flow uses a loopback callback inside the container, so a host browser cannot complete it.
 - Sentry's scoped credential volume is shared intentionally. Hub likewise shares GitHub CLI and AWS CLI state.
 - The pnpm store is shared only as a package cache. Worktree `node_modules` remains isolated by Hub's base Compose configuration.
 
@@ -23,6 +24,14 @@ Do not use this overlay for untrusted repositories or code that should not be ab
 
 `post-create.local.sh` installs Linear CLI, Pup, Buildkite CLI, Sentry CLI, gnome-keyring, Secret Service tools, and Pi. These tools intentionally track their upstream latest releases in this personal overlay. A future Hub devcontainer-image improvement may install their executables and system dependencies during image build; personal configuration and authentication should remain in this overlay.
 
-## Linear authentication
+## API-token authentication
+
+Linear and Buildkite use dedicated, scope-limited API tokens supplied from the macOS Keychain by `hub-workflow.local.sh`. Buildkite's Keychain service is `lyssna-buildkite-readonly`; create or update it with:
+
+```sh
+security add-generic-password -U -a "$USER" -s lyssna-buildkite-readonly -w
+```
+
+Supply a Buildkite personal access token with only the read permissions required by the commands you run. The launcher leaves Buildkite unset, with a warning, until that Keychain item exists so it does not block unrelated worktrees.
 
 The `linear` CLI supports an API key supplied through `LINEAR_API_KEY`, or stores an API key in the system keyring after `linear auth login`. Its `auth login` command prompts for an API key; it has no OAuth or read-only authentication mode. The current Keychain-supplied API key is already read-only and remains the intended setup.

@@ -49,8 +49,9 @@ if ! command -v pup >/dev/null 2>&1; then
   rm -rf "$pup_tmpdir"
 fi
 
-# Install Buildkite's CLI from its latest GitHub release. It uses the system
-# keyring for its refreshable OAuth credentials.
+# Install Buildkite's CLI from its latest GitHub release. It reads the dedicated
+# API token passed from the host Keychain; interactive OAuth cannot complete in
+# this headless container because its loopback callback is container-local.
 if [ -x "$HOME/.local/bin/bk-bin" ]; then
   mv -f "$HOME/.local/bin/bk-bin" "$HOME/.local/bin/bk"
 fi
