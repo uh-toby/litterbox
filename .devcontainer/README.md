@@ -25,6 +25,10 @@ Do not use this overlay for untrusted repositories or code that should not be ab
 
 `post-create.local.sh` installs Linear CLI, Pup, Buildkite CLI, Sentry CLI, gnome-keyring, Secret Service tools, and Pi. These tools intentionally track their upstream latest releases in this personal overlay. A future Hub devcontainer-image improvement may install their executables and system dependencies during image build; personal configuration and authentication should remain in this overlay.
 
+## Nix
+
+Nix manages tools in Hub devcontainers. It currently provides only a pinned, newer GitHub CLI from `../nix/flake.nix`.
+
 ## API-token authentication
 
 Linear and Buildkite use dedicated, scope-limited API tokens supplied from the macOS Keychain by `hub-workflow.local.sh`. Buildkite's Keychain service is `lyssna-buildkite-readonly`; create or update it with:

@@ -135,3 +135,32 @@ if [ ! -f "$HOME/.pi/agent/settings.json" ]; then
 }
 EOF
 fi
+
+# Install Nix once into the persistent Linux store, then expose the GitHub CLI
+# pinned by Litterbox's flake ahead of the Debian package on the shell PATH.
+NIX_PROFILE="/nix/var/nix/profiles/devcontainer"
+NIX_BIN="$NIX_PROFILE/bin/nix"
+NIX_FLAKE="${LITTERBOX_NIX_FLAKE:?LITTERBOX_NIX_FLAKE must be set}"
+
+sudo chown "$(id -u):$(id -g)" /nix
+exec 9>/nix/.litterbox-nix.lock
+flock 9
+
+if [[ ! -x "$NIX_BIN" ]]; then
+  echo "Installing Nix into persistent /nix volume..."
+  curl --proto '=https' --tlsv1.2 -sSf -L https://nixos.org/nix/install \
+    | sh -s -- --no-daemon --yes --no-channel-add --no-modify-profile
+
+  installed_nix="$(readlink -f "$HOME/.nix-profile/bin/nix")"
+  mkdir -p "$(dirname "$NIX_PROFILE")"
+  ln -sfn "${installed_nix%/bin/nix}" "$NIX_PROFILE"
+fi
+
+if ! "$NIX_BIN" store ping --store local >/dev/null 2>&1; then
+  echo "Error: local Nix store is unavailable" >&2
+  exit 1
+fi
+
+echo "Activating Home Manager configuration for lyssna..."
+out="$("$NIX_BIN" build --no-link --print-out-paths "$NIX_FLAKE#homeConfigurations.lyssna.activationPackage")"
+HOME_MANAGER_BACKUP_EXT=hm-bak "$out/activate"

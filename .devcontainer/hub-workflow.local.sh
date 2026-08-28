@@ -63,6 +63,7 @@ repo_root="$(git rev-parse --show-toplevel)"
 local_devcontainer_dir="$(dirname "$(realpath "${BASH_SOURCE[0]}")")"
 local_config_files=(
   compose.local.yaml
+  initialize.local.sh
   post-create.local.sh
   post-start.local.sh
 )
@@ -312,6 +313,7 @@ for local_file in "${local_config_files[@]}"; do
   cp "$source_file" "$target_file"
  done
 chmod +x \
+  "$worktree/.devcontainer/initialize.local.sh" \
   "$worktree/.devcontainer/post-create.local.sh" \
   "$worktree/.devcontainer/post-start.local.sh"
 

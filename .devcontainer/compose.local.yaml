@@ -20,6 +20,10 @@ services:
       # fall back to an invalid API-key session when the keyring is unavailable.
       DD_SITE: datadoghq.com
       BUILDKITE_ORGANIZATION_SLUG: usabilityhub
+      NIX_CONFIG: "experimental-features = nix-command flakes"
+      NIX_REMOTE: local
+      LITTERBOX_NIX_FLAKE: /home/lyssna/litterbox-nix
+      PATH: /home/lyssna/.local/share/mise/shims:/home/lyssna/.nix-profile/bin:/nix/var/nix/profiles/devcontainer/bin:/home/lyssna/.local/share/pnpm:/home/lyssna/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
     volumes:
       - ~/Documents/agent-notes:/home/lyssna/Documents/agent-notes
       # Agent configuration and skills are host-managed. Notes remain writable so
@@ -65,6 +69,10 @@ services:
       # so a named volume would add no useful durability and must not be shared
       # between independent gnome-keyring daemons.
       - sentry:/home/lyssna/.sentry
+      # The flake is host-managed; only its Nix configuration is available to
+      # containers. The Nix store below is the reusable Linux package cache.
+      - ${HOME}/projects/litterbox/nix:/home/lyssna/litterbox-nix:ro
+      - nix:/nix
 
 volumes:
   pi-agent:
@@ -80,3 +88,6 @@ volumes:
   sentry:
     external: true
     name: lyssna-sentry
+  nix:
+    external: true
+    name: lyssna-nix
