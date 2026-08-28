@@ -68,10 +68,15 @@ services:
 
 volumes:
   pi-agent:
-  # Shared package cache, created by hub-workflow.local.sh.
+  # Shared package caches, created by hub-workflow.local.sh. Both are content
+  # addressed/versioned; worktree node_modules remains isolated by Hub's base
+  # Compose configuration.
   pnpm-store:
     external: true
     name: lyssna-pnpm-store
+  mise-data:
+    external: true
+    name: lyssna-mise-data
   sentry:
     external: true
     name: lyssna-sentry

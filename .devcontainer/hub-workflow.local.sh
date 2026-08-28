@@ -251,6 +251,7 @@ prepare_host_credentials() {
 
   for shared_volume in \
     lyssna-pnpm-store \
+    lyssna-mise-data \
     lyssna-sentry
   do
     if ! docker volume inspect "$shared_volume" >/dev/null 2>&1; then
