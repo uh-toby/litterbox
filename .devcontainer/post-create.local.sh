@@ -14,8 +14,8 @@ if ! command -v linear >/dev/null 2>&1; then
     | LINEAR_INSTALL_DIR="$HOME/.local" sh
 fi
 
-# Install DataDog's Pup CLI from its latest GitHub release. Homebrew is not
-# available in the devcontainer, and ~/.local/bin is already on PATH.
+# Install DataDog's Pup CLI from its latest GitHub release. The Nix package
+# named `pup` is an unrelated HTML parser, so it cannot replace this CLI.
 # https://github.com/DataDog/pup
 mkdir -p "$HOME/.local/bin"
 # Earlier local setups wrapped Pup to lazily start Secret Service. A container
@@ -49,80 +49,9 @@ if ! command -v pup >/dev/null 2>&1; then
   rm -rf "$pup_tmpdir"
 fi
 
-# Install Buildkite's CLI from its latest GitHub release. It reads the dedicated
-# API token passed from the host Keychain; interactive OAuth cannot complete in
-# this headless container because its loopback callback is container-local.
-if [ -x "$HOME/.local/bin/bk-bin" ]; then
-  mv -f "$HOME/.local/bin/bk-bin" "$HOME/.local/bin/bk"
-fi
-if ! command -v bk >/dev/null 2>&1; then
-  case "$(uname -m)" in
-    aarch64 | arm64) bk_arch="arm64" ;;
-    x86_64) bk_arch="amd64" ;;
-    *)
-      echo "Error: unsupported architecture for Buildkite CLI: $(uname -m)" >&2
-      exit 1
-      ;;
-  esac
-
-  echo "Installing Buildkite CLI..."
-  bk_tag="$(curl --proto '=https' --tlsv1.2 -LsS -o /dev/null -w '%{url_effective}' \
-    https://github.com/buildkite/cli/releases/latest)"
-  bk_tag="${bk_tag##*/}"
-  bk_version="${bk_tag#v}"
-  bk_archive="bk_${bk_version}_linux_${bk_arch}.tar.gz"
-  bk_url="https://github.com/buildkite/cli/releases/download/${bk_tag}/${bk_archive}"
-  bk_tmpdir="$(mktemp -d)"
-
-  curl --proto '=https' --tlsv1.2 -LsSf "$bk_url" -o "$bk_tmpdir/$bk_archive"
-  tar -xzf "$bk_tmpdir/$bk_archive" -C "$bk_tmpdir"
-  install -m 755 "$(find "$bk_tmpdir" -type f -name bk -print -quit)" "$HOME/.local/bin/bk"
-  rm -rf "$bk_tmpdir"
-fi
-
-# Install Sentry's CLI with its OAuth-capable `sentry auth` command. A separate
-# scoped read-only token will be stored in its shared configuration volume.
-if ! command -v sentry >/dev/null 2>&1; then
-  case "$(uname -m)" in
-    aarch64 | arm64) sentry_arch="arm64" ;;
-    x86_64) sentry_arch="x64" ;;
-    *)
-      echo "Error: unsupported architecture for Sentry CLI: $(uname -m)" >&2
-      exit 1
-      ;;
-  esac
-
-  echo "Installing Sentry CLI..."
-  sentry_tag="$(curl --proto '=https' --tlsv1.2 -LsS -o /dev/null -w '%{url_effective}' \
-    https://github.com/getsentry/cli/releases/latest)"
-  sentry_tag="${sentry_tag##*/}"
-  sentry_url="https://github.com/getsentry/cli/releases/download/${sentry_tag}/sentry-linux-${sentry_arch}.gz"
-  sentry_tmpfile="$(mktemp)"
-
-  curl --proto '=https' --tlsv1.2 -LsSf "$sentry_url" | gzip -d >"$sentry_tmpfile"
-  install -m 755 "$sentry_tmpfile" "$HOME/.local/bin/sentry"
-  rm -f "$sentry_tmpfile"
-fi
-
-# Set up a headless system keyring (gnome-keyring's Secret Service over
-# D-Bus) so OAuth-capable CLIs store credentials encrypted at rest. The local
-# post-start hook starts and unlocks the one fixed session for this container.
-if ! command -v gnome-keyring-daemon >/dev/null 2>&1; then
-  echo "Installing gnome-keyring for system keyring support..."
-  sudo apt-get update -qq
-  sudo apt-get install --no-install-recommends -y gnome-keyring dbus-x11 libsecret-tools
-fi
-
 # Shared credential volumes are initially root-owned.
 sudo mkdir -p "$HOME/.sentry"
 sudo chown "$(id -u):$(id -g)" "$HOME/.sentry"
-
-# Install Pi and persist its project-independent configuration and sessions in the
-# worktree's named Docker volume (see compose.local.yaml).
-if ! command -v pi >/dev/null 2>&1; then
-  echo "Installing pi..."
-  pnpm add --global @earendil-works/pi-coding-agent
-fi
 
 sudo mkdir -p "$HOME/.pi/agent"
 sudo chown "$(id -u):$(id -g)" "$HOME/.pi/agent"
@@ -136,8 +65,8 @@ if [ ! -f "$HOME/.pi/agent/settings.json" ]; then
 EOF
 fi
 
-# Install Nix once into the persistent Linux store, then expose the GitHub CLI
-# pinned by Litterbox's flake ahead of the Debian package on the shell PATH.
+# Install Nix once into the persistent Linux store, then activate the
+# Litterbox-pinned command-line tools in this container's Home Manager profile.
 NIX_PROFILE="/nix/var/nix/profiles/devcontainer"
 NIX_BIN="$NIX_PROFILE/bin/nix"
 NIX_FLAKE="${LITTERBOX_NIX_FLAKE:?LITTERBOX_NIX_FLAKE must be set}"

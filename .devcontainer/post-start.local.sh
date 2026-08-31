@@ -62,7 +62,21 @@ if ! dbus-send --session \
   # searchable by their owner. Creating them here avoids a Debian trixie bug
   # where they can otherwise be created as mode 0600.
   install -d -m 700 "$runtime_dir/dbus-1/services" "$runtime_dir/keyring"
-  dbus-daemon --session --address="$DBUS_SESSION_BUS_ADDRESS" --fork --nopidfile
+
+  # The Nix D-Bus package keeps session.conf in its immutable store path rather
+  # than /etc. Prefer the system configuration when it exists so this remains
+  # compatible with an apt-provided D-Bus daemon.
+  if [[ -f /etc/dbus-1/session.conf ]]; then
+    dbus-daemon --session --address="$DBUS_SESSION_BUS_ADDRESS" --fork --nopidfile
+  else
+    dbus_daemon="$(readlink -f "$(command -v dbus-daemon)")"
+    dbus_session_config="$(dirname "$(dirname "$dbus_daemon")")/share/dbus-1/session.conf"
+    [[ -f "$dbus_session_config" ]] || {
+      echo "Error: could not find a D-Bus session configuration for $dbus_daemon." >&2
+      exit 1
+    }
+    dbus-daemon --config-file="$dbus_session_config" --address="$DBUS_SESSION_BUS_ADDRESS" --fork --nopidfile
+  fi
 fi
 
 # Do not query org.freedesktop.secrets before --login. D-Bus activation would
