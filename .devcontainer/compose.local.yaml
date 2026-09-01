@@ -76,12 +76,18 @@ services:
 
 volumes:
   pi-agent:
-  # Shared package caches, created by hub-workflow.local.sh. Both are content
-  # addressed/versioned; worktree node_modules remains isolated by Hub's base
-  # Compose configuration.
+  # Shared package caches, created by hub-workflow.local.sh. pnpm packages and
+  # Playwright browser revisions are content-addressed/versioned; worktree
+  # node_modules remains isolated by Hub's base Compose configuration.
   pnpm-store:
     external: true
     name: lyssna-pnpm-store
+  # Overrides Hub's worktree-scoped `playwright` volume. Playwright stores each
+  # browser revision separately, so `playwright install` remains safe after a
+  # worktree changes its Playwright version.
+  playwright:
+    external: true
+    name: lyssna-playwright
   mise-data:
     external: true
     name: lyssna-mise-data

@@ -13,6 +13,7 @@ All worktrees started with this overlay are trusted local development environmen
 - Buildkite uses a dedicated, read-only API token read from the host Keychain and passed as `BUILDKITE_API_TOKEN`. The CLI's interactive OAuth flow uses a loopback callback inside the container, so a host browser cannot complete it.
 - Sentry's scoped credential volume is shared intentionally. Hub likewise shares GitHub CLI and AWS CLI state.
 - The pnpm store is shared only as a package cache. Worktree `node_modules` remains isolated by Hub's base Compose configuration.
+- Playwright's browser cache is shared. Playwright stores browser revisions separately and `pnpm exec playwright install chromium` installs the revision required by the worktree, so compatible downloads are reused without forcing a browser version across worktrees.
 - Mise's versioned runtime installs and tool cache are shared. Mise reconciles the active Ruby, Node, and pnpm versions to each worktree's checked-out configuration, so version changes add new installs without overwriting an existing one.
 
 Do not use this overlay for untrusted repositories or code that should not be able to act as these shared identities.

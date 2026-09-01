@@ -252,6 +252,7 @@ prepare_host_credentials() {
 
   for shared_volume in \
     lyssna-pnpm-store \
+    lyssna-playwright \
     lyssna-mise-data \
     lyssna-sentry
   do
