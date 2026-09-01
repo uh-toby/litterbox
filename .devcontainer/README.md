@@ -24,11 +24,11 @@ Do not use this overlay for untrusted repositories or code that should not be ab
 
 ## Local command-line tools
 
-Home Manager installs Buildkite CLI, Sentry CLI, Pi, gnome-keyring, D-Bus, and Secret Service tools from the Litterbox-pinned Nix flake. These immutable packages are shared through the Nix store while each container keeps its own Home Manager profile. `post-create.local.sh` still installs Linear CLI and DataDog Pup from their upstream latest releases: nixpkgs has no Linux Linear CLI package, and its unrelated `pup` package is an HTML parser. A future Hub devcontainer-image improvement may install their executables and system dependencies during image build; personal configuration and authentication should remain in this overlay.
+The Hub image installs Linear, DataDog Pup, Buildkite CLI, and Sentry CLI during its build, verifying downloaded release artefacts against upstream checksum metadata. The Litterbox-pinned Nix flake supplies Pi, gnome-keyring, D-Bus, Secret Service tools, and a newer GitHub CLI. Its immutable packages are shared through the Nix store while each container keeps its own Home Manager profile. Personal configuration and authentication remain in this overlay.
 
 ## Nix
 
-Nix manages tools in Hub devcontainers. It currently provides only a pinned, newer GitHub CLI from `../nix/flake.nix`.
+Nix manages the local-only tools in Hub devcontainers: Pi and the Secret Service dependencies, plus a pinned newer GitHub CLI from `../nix/flake.nix`.
 
 ## API-token authentication
 

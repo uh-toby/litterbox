@@ -5,18 +5,12 @@
   home.stateVersion = "25.11";
 
   home.packages = with pkgs; [
+    # Hub's image supplies Linear, Pup, Buildkite, and Sentry. Keep only tools
+    # that need the local Nix/Secret Service setup here.
     gh
-    buildkite-cli
-    sentry-cli
     pi-coding-agent
     gnome-keyring
     dbus
     libsecret
-
-    # Nixpkgs names Sentry's executable `sentry-cli`; preserve the command name
-    # used by the Sentry skill and the previous GitHub-release installation.
-    (writeShellScriptBin "sentry" ''
-      exec ${sentry-cli}/bin/sentry-cli "$@"
-    '')
   ];
 }
