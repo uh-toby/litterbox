@@ -41,29 +41,18 @@ services:
       - pnpm-store:/home/lyssna/.pnpm
       - pi-agent:/home/lyssna/.pi/agent
       # Docker Desktop's host SSH-agent forwarding socket.
-      - type: bind
-        source: /run/host-services/ssh-auth.sock
-        target: /run/host-services/ssh-auth.sock
+      - /run/host-services/ssh-auth.sock:/run/host-services/ssh-auth.sock
       # Use the host Pi credentials without copying them into the worktree.
-      - type: bind
-        source: ${HOME}/.pi/agent/auth.json
-        target: /home/lyssna/.pi/agent/auth.json
-        read_only: true
+      - ${HOME}/.pi/agent/auth.json:/home/lyssna/.pi/agent/auth.json:ro
       # Sessions are durable on the host and available to all newly created
       # worktree containers. Pi still organises them by each environment's cwd.
-      - type: bind
-        source: ${HOME}/.pi/agent/sessions
-        target: /home/lyssna/.pi/agent/sessions
+      - ${HOME}/.pi/agent/sessions:/home/lyssna/.pi/agent/sessions
       # The host is the source of truth for global Pi configuration and its
       # appended system prompt. Pi writes harmless global metadata such as its
       # last changelog version, so settings.json must remain writable.
-      - type: bind
-        source: ${HOME}/.pi/agent/settings.json
-        target: /home/lyssna/.pi/agent/settings.json
-      - type: bind
-        source: ${HOME}/.pi/agent/APPEND_SYSTEM.md
-        target: /home/lyssna/.pi/agent/APPEND_SYSTEM.md
-        read_only: true
+      - ${HOME}/.pi/agent/settings.json:/home/lyssna/.pi/agent/settings.json
+      - ${HOME}/.pi/agent/APPEND_SYSTEM.md:/home/lyssna/.pi/agent/APPEND_SYSTEM.md:ro
+      - ${HOME}/.pi/agent/AGENTS.md:/home/lyssna/.pi/agent/AGENTS.md:ro
       # Pup and Secret Service state stays in the container filesystem. The
       # current launcher never recreates a worktree container without cleanup,
       # so a named volume would add no useful durability and must not be shared
