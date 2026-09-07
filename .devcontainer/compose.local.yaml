@@ -28,14 +28,8 @@ services:
       - ~/Documents/agent-notes:/home/lyssna/Documents/agent-notes
       # Agent configuration and skills are host-managed. Notes remain writable so
       # containers and the host can share handover and papercut records.
-      - type: bind
-        source: ~/.agents
-        target: /home/lyssna/.agents
-        read_only: true
-      - type: bind
-        source: ~/.agents/skills
-        target: /home/lyssna/.claude/skills
-        read_only: true
+      - ~/.agents:/home/lyssna/.agents:ro
+      - ~/.agents/skills:/home/lyssna/.claude/skills:ro
       # Share pnpm's content-addressable store between worktrees. node_modules
       # remains worktree-local through the base Compose configuration.
       - pnpm-store:/home/lyssna/.pnpm
