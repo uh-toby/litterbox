@@ -16,8 +16,8 @@ worktree devcontainer. --continue reconnects to an existing worktree's
 devcontainer, starting it when necessary. --recreate replaces the worktree's
 primary devcontainer with the current local configuration while preserving its
 Git worktree and Compose project volumes. --cleanup deletes that worktree's
-containers and removes the local worktree without deleting either its local or
-remote branch.
+containers, Rails image, and local worktree without deleting either its local
+or remote branch.
 EOF
   exit 2
 }
@@ -98,6 +98,7 @@ if [[ "$teardown" == true ]]; then
 
   compose_working_dirs=()
   compose_projects=()
+  devcontainer_images=()
   if [[ -n "${devcontainer_containers[*]:-}" ]]; then
     for container in "${devcontainer_containers[@]}"; do
       compose_working_dir="$(docker inspect \
@@ -106,6 +107,7 @@ if [[ "$teardown" == true ]]; then
       compose_project="$(docker inspect \
         --format '{{ index .Config.Labels "com.docker.compose.project" }}' \
         "$container")"
+      image="$(docker inspect --format '{{ .Config.Image }}' "$container")"
 
       if [[ -z "$compose_working_dir" || "$compose_working_dir" == "<no value>" ]]; then
         echo "Removing devcontainer: $container"
@@ -125,6 +127,7 @@ if [[ "$teardown" == true ]]; then
       fi
       compose_working_dirs+=("$compose_working_dir")
       compose_projects+=("$compose_project")
+      devcontainer_images+=("$image")
     done
   fi
 
@@ -155,6 +158,13 @@ if [[ "$teardown" == true ]]; then
         echo "Removing devcontainer volumes for project: $compose_project"
         docker volume rm "${project_volumes[@]}"
       fi
+    done
+  fi
+
+  if [[ -n "${devcontainer_images[*]:-}" ]]; then
+    for image in "${devcontainer_images[@]}"; do
+      echo "Removing devcontainer image: $image"
+      docker image rm "$image"
     done
   fi
 
