@@ -6,8 +6,7 @@ These files are symlinked into `~/projects/hub/.devcontainer/` and are copied in
 
 All worktrees started with this overlay are trusted local development environments. They deliberately share credentials where that avoids repeated interactive authentication:
 
-- GitHub CLI authentication is shared through Hub's `lyssna-gh` Docker volume. `GH_TOKEN` is also supplied from the macOS Keychain because tools and agent workflows may require it directly. It is a fine-grained, read-only token.
-- The host SSH agent is forwarded. It currently contains only the GitHub SSH identity.
+- Authorise `gh` once inside a trusted container with `gh auth login --with-token`. Git uses HTTPS and `gh` is its credential helper.
 - Pi authentication, sessions, settings, and appended system prompt are shared from the host. `auth.json` and `APPEND_SYSTEM.md` are read-only; Pi writes session and settings metadata.
 - Pup OAuth credentials, the Secret Service database, its password, and its D-Bus runtime state are per-container. Recreated containers need to authenticate Pup again.
 - Buildkite uses a dedicated, read-only API token read from the host Keychain and passed as `BUILDKITE_API_TOKEN`. The CLI's interactive OAuth flow uses a loopback callback inside the container, so a host browser cannot complete it.
@@ -29,6 +28,24 @@ The Hub image installs Linear, DataDog Pup, Buildkite CLI, and Sentry CLI during
 ## Nix
 
 Nix manages the local-only tools in Hub devcontainers: Pi and the Secret Service dependencies, plus a pinned newer GitHub CLI from `../nix/flake.nix`.
+
+## GitHub CLI authentication
+
+Hub's `origin` must use HTTPS. On the host, set it once with:
+
+```sh
+git -C ~/projects/hub remote set-url origin https://github.com/wearelyssna/hub.git
+```
+
+In one trusted Hub devcontainer, authenticate the shared `lyssna-gh` volume:
+
+```sh
+gh auth login --hostname github.com --with-token
+```
+
+Use a fine-grained personal access token owned by `wearelyssna`, restricted to the Hub repositories agents need. Grant `Contents` read/write, `Pull requests` read/write, `Issues` read/write, `Actions` read-only, and `Commit statuses` read-only. Grant `Discussions` only when agents need GitHub Discussions. Do not grant administration, secrets, variables, webhooks, environments, deployments, or workflow permissions.
+
+`post-create.local.sh` configures `gh` as Git's HTTPS credential helper in every container. The login is required only once: later containers use the shared authenticated volume.
 
 ## API-token authentication
 

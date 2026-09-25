@@ -204,17 +204,6 @@ if [[ "$connect_existing" == true ]]; then
 fi
 
 prepare_host_credentials() {
-  [[ -n "${SSH_AUTH_SOCK:-}" ]] || {
-    echo "Error: SSH_AUTH_SOCK is not set." >&2
-    echo "Start or select an SSH agent before creating or recreating a devcontainer." >&2
-    return 1
-  }
-
-  [[ -S "$SSH_AUTH_SOCK" ]] || {
-    echo "Error: SSH agent socket does not exist: $SSH_AUTH_SOCK" >&2
-    return 1
-  }
-
   command -v security >/dev/null || {
     echo "Error: macOS security CLI is not installed." >&2
     return 1
@@ -232,19 +221,6 @@ prepare_host_credentials() {
     return 1
   }
   export LINEAR_API_KEY
-
-  GH_TOKEN="$(security find-generic-password \
-    -a "$USER" \
-    -s lyssna-github-cli \
-    -w)" || {
-    echo "Error: could not read GH_TOKEN from the lyssna-github-cli Keychain item." >&2
-    return 1
-  }
-  [[ -n "$GH_TOKEN" ]] || {
-    echo "Error: GH_TOKEN from Keychain is empty." >&2
-    return 1
-  }
-  export GH_TOKEN
 
   # `bk auth login` uses a loopback OAuth callback inside the container, which a
   # host browser cannot reach. Use a dedicated read-only API token from the host
@@ -393,42 +369,6 @@ if [[ -n "$existing_container" ]]; then
     echo "Apply the current configuration with: $0 --recreate $branch" >&2
   fi
 fi
-
-echo "Configuring GitHub SSH host verification..."
-# Pin GitHub's published Ed25519 host key rather than learning it with
-# ssh-keyscan or StrictHostKeyChecking=accept-new. The latter would make a
-# first-use connection vulnerable to a network-level man-in-the-middle attack.
-devcontainer exec "${devcontainer_args[@]}" \
-  bash -lc '
-    set -euo pipefail
-    ssh_dir="$HOME/.ssh"
-    known_hosts="$ssh_dir/known_hosts"
-    github_host_key="github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl"
-
-    install -d -m 700 "$ssh_dir"
-    touch "$known_hosts"
-    chmod 600 "$known_hosts"
-    ssh-keygen -R github.com -f "$known_hosts" >/dev/null 2>&1 || true
-    ssh-keygen -R "[github.com]:22" -f "$known_hosts" >/dev/null 2>&1 || true
-    printf "%s\\n" "$github_host_key" >>"$known_hosts"
-  '
-
-echo "Verifying SSH agent forwarding..."
-# `ssh-add -l` exits 1 when it can reach the agent but the agent has no
-# identities. That must not prevent reconnecting to Pi: Pi can authenticate
-# independently, and an identity can be added to the forwarded agent later.
-devcontainer exec "${devcontainer_args[@]}" \
-  bash -lc '
-    ssh-add -l >/dev/null
-    status=$?
-    case "$status" in
-      0) ;;
-      1)
-        echo "Warning: the forwarded SSH agent has no identities; Git-over-SSH will be unavailable until one is added." >&2
-        ;;
-      *) exit "$status" ;;
-    esac
-  '
 
 echo "Pup is available with read-only OAuth when needed: pup auth login --read-only" >&2
 

@@ -50,3 +50,8 @@ fi
 echo "Activating Home Manager configuration for lyssna..."
 out="$("$NIX_BIN" build --no-link --print-out-paths "$NIX_FLAKE#homeConfigurations.lyssna.activationPackage")"
 HOME_MANAGER_BACKUP_EXT=hm-bak "$out/activate"
+
+# The shared Hub `lyssna-gh` volume stores the organisation-scoped token. Force
+# the helper configuration even before its first login so every worktree uses
+# HTTPS Git once one trusted container has authenticated that volume.
+gh auth setup-git --hostname github.com --force
