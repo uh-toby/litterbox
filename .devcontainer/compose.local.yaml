@@ -5,7 +5,7 @@ services:
     labels:
       lyssna.local_config_fingerprint: ${LOCAL_CONFIG_FINGERPRINT:-unknown}
     environment:
-      # The local post-start hook owns the fixed headless Secret Service socket.
+      # One host-wide keyring service owns this socket for all trusted worktrees.
       XDG_RUNTIME_DIR: /run/user/1000
       DBUS_SESSION_BUS_ADDRESS: unix:path=/run/user/1000/bus
       # Fine-grained permissions pulled from the host Keychain by hub-workflow.local.sh.
@@ -13,6 +13,8 @@ services:
       # A dedicated, read-only Buildkite API token. OAuth cannot redirect a host
       # browser to bk's loopback callback listener inside this container.
       BUILDKITE_API_TOKEN: ${BUILDKITE_API_TOKEN:-}
+      # Fail closed if Secret Service is unavailable; never fall back to local files.
+      DD_TOKEN_STORAGE: keychain
       # Pup uses the shared OAuth session in the Secret Service. Do not set
       # DD_API_KEY/DD_APP_KEY: they are legacy credentials and cause Pup to
       # fall back to an invalid API-key session when the keyring is unavailable.
@@ -43,10 +45,9 @@ services:
       - ${HOME}/.pi/agent/settings.json:/home/lyssna/.pi/agent/settings.json
       - ${HOME}/.pi/agent/APPEND_SYSTEM.md:/home/lyssna/.pi/agent/APPEND_SYSTEM.md:ro
       - ${HOME}/.pi/agent/AGENTS.md:/home/lyssna/.pi/agent/AGENTS.md:ro
-      # Pup and Secret Service state stays in the container filesystem. The
-      # current launcher never recreates a worktree container without cleanup,
-      # so a named volume would add no useful durability and must not be shared
-      # between independent gnome-keyring daemons.
+      # The one shared daemon owns the database; clients only mount its runtime.
+      # A read-only mount still permits socket communication and secret access.
+      - keyring-runtime:/run/user/1000:ro
       - sentry:/home/lyssna/.sentry
       # The flake is host-managed; only its Nix configuration is available to
       # containers. The Nix store below is the reusable Linux package cache.
@@ -70,6 +71,9 @@ volumes:
   mise-data:
     external: true
     name: lyssna-mise-data
+  keyring-runtime:
+    external: true
+    name: lyssna-keyring-runtime
   sentry:
     external: true
     name: lyssna-sentry

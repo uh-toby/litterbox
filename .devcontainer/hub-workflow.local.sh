@@ -64,6 +64,7 @@ local_devcontainer_dir="$(dirname "$(realpath "${BASH_SOURCE[0]}")")"
 local_config_files=(
   compose.local.yaml
   initialize.local.sh
+  keyring.local.sh
   post-create.local.sh
   post-start.local.sh
 )
@@ -339,7 +340,7 @@ if [[ "$recreate_existing" == true ]]; then
   }
 
   echo "Recreating devcontainer with current local configuration..."
-  echo "Compose project volumes will be preserved. Container-local Pup credentials will be removed." >&2
+  echo "Compose project volumes and shared Pup authentication will be preserved. Old container-local Pup credentials are not migrated." >&2
   # Remove only the primary container. This avoids relying on Dev Containers'
   # inferred ID label, and leaves the Compose project's databases, caches, and
   # supporting services intact.
@@ -370,7 +371,7 @@ if [[ -n "$existing_container" ]]; then
   fi
 fi
 
-echo "Pup is available with read-only OAuth when needed: pup auth login --read-only" >&2
+echo "Pup uses the shared keyring. Authenticate once if needed: pup auth login --read-only" >&2
 
 echo "Devcontainer ready. Connecting..."
 exec devcontainer exec "${devcontainer_args[@]}" \
