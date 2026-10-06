@@ -43,6 +43,8 @@ services:
       # appended system prompt. Pi writes harmless global metadata such as its
       # last changelog version, so settings.json must remain writable.
       - ${HOME}/.pi/agent/settings.json:/home/lyssna/.pi/agent/settings.json
+      - ${HOME}/.pi/agent/mcp.json:/home/lyssna/.pi/agent/mcp.json:ro
+      - ${HOME}/.pi/agent/mcp-auth.json:/home/lyssna/.pi/agent/mcp-auth.json
       - ${HOME}/.pi/agent/APPEND_SYSTEM.md:/home/lyssna/.pi/agent/APPEND_SYSTEM.md:ro
       - ${HOME}/.pi/agent/AGENTS.md:/home/lyssna/.pi/agent/AGENTS.md:ro
       # The one shared daemon owns the database; clients only mount its runtime.

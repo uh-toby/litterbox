@@ -1,4 +1,4 @@
-{ pkgs, ... }:
+{ pkgs, piPackage, ... }:
 {
   home.username = "lyssna";
   home.homeDirectory = "/home/lyssna";
@@ -9,7 +9,7 @@
     # that need the local Nix/Secret Service setup here.
     gh
     moon
-    pi-coding-agent
+    piPackage
     gnome-keyring
     dbus
     libsecret
