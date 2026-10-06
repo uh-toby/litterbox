@@ -2,6 +2,10 @@
 
 These files are symlinked into `~/projects/hub/.devcontainer/` and are copied into worktrees by `hub-workflow.local.sh`. They extend Hub's tracked devcontainer configuration with personal agent tooling and credentials.
 
+## Mobile configuration
+
+`hub-workflow.local.sh --create` copies each new worktree's `mobile/apps/*/config.example.ts` to `config.ts`. It uses the checked-out branch's examples, not the primary checkout's local configs. `--continue` and `--recreate` leave existing mobile configs unchanged.
+
 ## Trust model
 
 All worktrees started with this overlay are trusted local development environments. They deliberately share credentials where that avoids repeated interactive authentication:
