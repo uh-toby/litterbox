@@ -69,14 +69,12 @@ Pup's access tokens typically last one hour and refresh with a five-minute safet
 
 Existing containers retain their local keyring until explicitly recreated with the workflow. `--cleanup` does not delete the shared external keyring volumes or service. To stop sharing/revoke access, revoke the OAuth authorisation in Datadog; deleting a container does not revoke it. Never commit or print the contents of the credential volumes.
 
-## API-token authentication
+## Buildkite API-token authentication
 
-Linear and Buildkite use dedicated, scope-limited API tokens supplied from the macOS Keychain by `hub-workflow.local.sh`. Buildkite's Keychain service is `lyssna-buildkite-readonly`; create or update it with:
+Buildkite uses a dedicated, scope-limited API token supplied from the macOS Keychain by `hub-workflow.local.sh`. Its Keychain service is `lyssna-buildkite-readonly`; create or update it with:
 
 ```sh
 security add-generic-password -U -a "$USER" -s lyssna-buildkite-readonly -w
 ```
 
 Supply a Buildkite personal access token with only the read permissions required by the commands you run. The launcher leaves Buildkite unset, with a warning, until that Keychain item exists so it does not block unrelated worktrees.
-
-The `linear` CLI supports an API key supplied through `LINEAR_API_KEY`, or stores an API key in the system keyring after `linear auth login`. Its `auth login` command prompts for an API key; it has no OAuth or read-only authentication mode. The current Keychain-supplied API key is already read-only and remains the intended setup.

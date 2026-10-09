@@ -210,19 +210,6 @@ prepare_host_credentials() {
     return 1
   }
 
-  LINEAR_API_KEY="$(security find-generic-password \
-    -a "$USER" \
-    -s lyssna-linear-readonly \
-    -w)" || {
-    echo "Error: could not read LINEAR_API_KEY from the lyssna-linear-readonly Keychain item." >&2
-    return 1
-  }
-  [[ -n "$LINEAR_API_KEY" ]] || {
-    echo "Error: LINEAR_API_KEY from Keychain is empty." >&2
-    return 1
-  }
-  export LINEAR_API_KEY
-
   # `bk auth login` uses a loopback OAuth callback inside the container, which a
   # host browser cannot reach. Use a dedicated read-only API token from the host
   # Keychain instead. Buildkite is optional, so do not prevent unrelated

@@ -8,8 +8,6 @@ services:
       # One host-wide keyring service owns this socket for all trusted worktrees.
       XDG_RUNTIME_DIR: /run/user/1000
       DBUS_SESSION_BUS_ADDRESS: unix:path=/run/user/1000/bus
-      # Fine-grained permissions pulled from the host Keychain by hub-workflow.local.sh.
-      LINEAR_API_KEY: ${LINEAR_API_KEY:-}
       # A dedicated, read-only Buildkite API token. OAuth cannot redirect a host
       # browser to bk's loopback callback listener inside this container.
       BUILDKITE_API_TOKEN: ${BUILDKITE_API_TOKEN:-}
