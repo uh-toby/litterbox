@@ -13,12 +13,6 @@ services:
       # A dedicated, read-only Buildkite API token. OAuth cannot redirect a host
       # browser to bk's loopback callback listener inside this container.
       BUILDKITE_API_TOKEN: ${BUILDKITE_API_TOKEN:-}
-      # Fail closed if Secret Service is unavailable; never fall back to local files.
-      DD_TOKEN_STORAGE: keychain
-      # Pup uses the shared OAuth session in the Secret Service. Do not set
-      # DD_API_KEY/DD_APP_KEY: they are legacy credentials and cause Pup to
-      # fall back to an invalid API-key session when the keyring is unavailable.
-      DD_SITE: datadoghq.com
       BUILDKITE_ORGANIZATION_SLUG: usabilityhub
       NIX_CONFIG: "experimental-features = nix-command flakes"
       NIX_REMOTE: local

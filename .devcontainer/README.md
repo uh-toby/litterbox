@@ -53,13 +53,13 @@ Use a fine-grained personal access token owned by `wearelyssna`, restricted to t
 
 ## Pup shared OAuth authentication
 
-`initialize.local.sh` creates/starts one `lyssna-keyring` service before Compose starts. `post-start.local.sh` only checks that its collection is unlocked; worktree containers must not start independent daemons against the shared database. `DD_TOKEN_STORAGE=keychain` explicitly selects Secret Service and fails rather than falling back to container-local files.
+`initialize.local.sh` creates/starts one `lyssna-keyring` service before Compose starts. `post-start.local.sh` only checks that its collection is unlocked; worktree containers must not start independent daemons against the shared database. Pup auto-detects the shared Secret Service through `DBUS_SESSION_BUS_ADDRESS`; no `DD_TOKEN_STORAGE` override is needed. If Secret Service is unavailable, Pup tries the kernel keyring, then container-local files; these do not inherit the shared login. `DD_SITE` is also unset: Pup uses the saved session's site or defaults to `datadoghq.com` (US1).
 
 In the first new trusted container, authenticate with:
 
 ```sh
-pup auth login --read-only --site datadoghq.com --callback-port 8080
-pup auth status --site datadoghq.com
+pup auth login --read-only --callback-port 8080
+pup auth status
 pup auth test
 ```
 
